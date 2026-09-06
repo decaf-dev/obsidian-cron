@@ -25,7 +25,6 @@ export interface CronSettings {
 	loginShellOverride: string | null;
 	/** Prepended to PATH inside the runner. */
 	extraPath: string[];
-	removeJobsOnDisable: boolean;
 	logMaxBytes: number;
 }
 
@@ -34,7 +33,6 @@ export const DEFAULT_SETTINGS: CronSettings = {
 	jobs: [],
 	loginShellOverride: null,
 	extraPath: [],
-	removeJobsOnDisable: true,
 	logMaxBytes: 1024 * 1024,
 };
 

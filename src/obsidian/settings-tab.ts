@@ -11,8 +11,7 @@ import { fileUrl } from "./vault-paths";
 type ControlKey =
 	| "loginShellOverride"
 	| "extraPath"
-	| "logMaxBytes"
-	| "removeJobsOnDisable";
+	| "logMaxBytes";
 
 export class CronSettingTab extends PluginSettingTab {
 	/** One subscription shared by every component this tab mounts. */
@@ -49,8 +48,6 @@ export class CronSettingTab extends PluginSettingTab {
 				return settings.extraPath.join(":");
 			case "logMaxBytes":
 				return Math.round(settings.logMaxBytes / 1024);
-			case "removeJobsOnDisable":
-				return settings.removeJobsOnDisable;
 			default:
 				return undefined;
 		}
@@ -74,9 +71,6 @@ export class CronSettingTab extends PluginSettingTab {
 				return;
 			case "logMaxBytes":
 				await service.updateSettings({ logMaxBytes: Math.max(1, Number(value)) * 1024 });
-				return;
-			case "removeJobsOnDisable":
-				await service.updateSettings({ removeJobsOnDisable: Boolean(value) });
 				return;
 		}
 	}
@@ -152,15 +146,6 @@ export class CronSettingTab extends PluginSettingTab {
 				type: "group",
 				heading: "Crontab",
 				items: [
-					{
-						name: "Remove jobs when the plugin is disabled",
-						desc: "Jobs always survive quitting Obsidian. This controls whether disabling or uninstalling the plugin also clears them from your crontab.",
-						control: {
-							type: "toggle",
-							key: "removeJobsOnDisable" satisfies ControlKey,
-							defaultValue: true,
-						},
-					},
 					{
 						name: "Remove all managed jobs now",
 						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { CronService } from "../obsidian/cron-service";
+	import DiagnosticsPanel from "./DiagnosticsPanel.svelte";
 	import JobRow from "./JobRow.svelte";
 	import type { JobStore } from "./store.svelte";
 
@@ -13,6 +14,8 @@
 </script>
 
 <div class="cron-job-list">
+	<DiagnosticsPanel diagnostics={store.diagnostics} />
+
 	{#if store.views.length === 0}
 		<div class="cron-empty">
 			<p>No scripts yet.</p>
@@ -29,10 +32,6 @@
 			<JobRow {view} {service} blocked={store.blocked} />
 		{/each}
 	{/if}
-
-	<div class="cron-list-footer">
-		<button type="button" onclick={() => void service.refreshFromDisk()}>Rescan folder</button>
-	</div>
 </div>
 
 <style>
@@ -62,10 +61,5 @@
 	.cron-empty code {
 		font-size: var(--font-ui-smaller);
 		overflow-wrap: anywhere;
-	}
-
-	.cron-list-footer {
-		display: flex;
-		justify-content: flex-end;
 	}
 </style>

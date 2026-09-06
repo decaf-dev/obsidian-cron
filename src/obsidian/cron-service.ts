@@ -167,6 +167,11 @@ export class CronService {
 		});
 	}
 
+	/** PATH a scheduled job runs with, or null until the login shell is probed. */
+	getResolvedPath(): string | null {
+		return this.resolvedPath;
+	}
+
 	getDiagnostics(): Diagnostic[] {
 		if (this.pathError !== null) {
 			return [{ level: "error", message: this.pathError }];
@@ -177,7 +182,6 @@ export class CronService {
 			vaultPath: this.paths?.vault ?? null,
 			crontabError: this.crontabError,
 			loginShell: this.loginShell,
-			resolvedPath: this.resolvedPath,
 		});
 		if (this.scanError !== null) {
 			diagnostics.unshift({
@@ -228,7 +232,6 @@ export class CronService {
 		const result = reconcileJobs(
 			this.plugin.settings.jobs,
 			this.scripts.map((script) => script.fileName),
-			{ schedule: this.plugin.settings.defaultSchedule },
 			(fileName) => makeJobId(fileName, randomSuffix)
 		);
 
@@ -246,6 +249,27 @@ export class CronService {
 		// list. The signature check in syncCrontab makes this free when nothing
 		// cron cares about actually moved.
 		this.requestCrontabSync();
+	}
+
+	/**
+	 * A rescan the user asked for, which reports what it found. The watch and
+	 * polling paths call `refreshFromDisk` directly so they stay silent.
+	 */
+	async rescan(): Promise<void> {
+		if (this.paths === null) {
+			new Notice("Cron is unavailable for this vault.");
+			return;
+		}
+
+		await this.refreshFromDisk();
+
+		if (this.scanError !== null) {
+			new Notice(`Could not read the cron folder: ${this.scanError}`);
+			return;
+		}
+
+		const count = this.scripts.length;
+		new Notice(count === 1 ? "Rescanned: 1 script found." : `Rescanned: ${count} scripts found.`);
 	}
 
 	startPolling(register: (id: number) => void): void {
@@ -283,11 +307,20 @@ export class CronService {
 		const index = jobs.findIndex((job) => job.id === id);
 		if (index === -1) return;
 
-		jobs[index] = { ...jobs[index], ...patch };
+		const previous = jobs[index];
+		const job = { ...previous, ...patch };
+		jobs[index] = job;
 		await this.plugin.saveSettings();
 		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
+
+		// Announces the user's intent, which the crontab write then follows. A
+		// write that fails reports itself separately. Renames and schedule
+		// edits stay quiet, since the row already shows their result.
+		if (patch.enabled !== undefined && patch.enabled !== previous.enabled) {
+			new Notice(`${job.name} is now ${job.enabled ? "enabled" : "disabled"}.`);
+		}
 	}
 
 	/**

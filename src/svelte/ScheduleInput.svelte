@@ -1,16 +1,30 @@
 <script lang="ts">
 	import {
+		SCHEDULE_PRESETS,
 		describeCronExpression,
+		matchSchedulePreset,
 		validateCronExpression,
 	} from "../obsidian/cron-expression";
 
 	interface Props {
+		/** Ties the dropdown to the caller's visible label. */
+		id: string;
 		value: string;
 		disabled?: boolean;
 		onCommit: (schedule: string) => void;
 	}
 
-	let { value, disabled = false, onCommit }: Props = $props();
+	let { id, value, disabled = false, onCommit }: Props = $props();
+
+	/** Sentinel option value; no preset can collide with it. */
+	const CUSTOM = "custom";
+
+	// Set when the user picks Custom for a schedule that *does* match a preset,
+	// which is the only case the saved value cannot tell us about on its own.
+	let customChosen = $state(false);
+
+	const preset = $derived(matchSchedulePreset(value));
+	const isCustom = $derived(preset === null || customChosen);
 
 	// While editing, the field holds a local draft so an invalid intermediate
 	// value never reaches the service, and therefore never reaches the crontab.
@@ -20,6 +34,17 @@
 	const shown = $derived(draft ?? value);
 	const validation = $derived(validateCronExpression(shown));
 	const description = $derived(validation.ok ? describeCronExpression(shown) : "");
+
+	function onSelect(event: Event) {
+		const choice = (event.currentTarget as HTMLSelectElement).value;
+		if (choice === CUSTOM) {
+			customChosen = true;
+			return;
+		}
+		customChosen = false;
+		draft = null;
+		if (choice !== value) onCommit(choice);
+	}
 
 	function commit() {
 		if (draft !== null && validation.ok && validation.normalized !== value) {
@@ -43,32 +68,62 @@
 </script>
 
 <div class="cron-schedule">
-	<input
-		type="text"
-		class="cron-schedule-input"
-		class:cron-invalid={!validation.ok}
-		spellcheck="false"
-		placeholder="0 3 * * *"
-		aria-label="Cron schedule"
-		value={shown}
+	<select
+		{id}
+		class="dropdown cron-schedule-select"
 		{disabled}
-		oninput={onInput}
-		onblur={commit}
-		onkeydown={onKeydown}
-	/>
-	{#if !validation.ok}
-		<div class="cron-schedule-note cron-error">{validation.error}</div>
-	{:else if description}
-		<div class="cron-schedule-note">{description}</div>
+		value={isCustom ? CUSTOM : preset?.expression}
+		onchange={onSelect}
+	>
+		{#each SCHEDULE_PRESETS as option (option.expression)}
+			<option value={option.expression}>{option.label}</option>
+		{/each}
+		<option value={CUSTOM}>Custom</option>
+	</select>
+
+	{#if isCustom}
+		<input
+			type="text"
+			class="cron-schedule-input"
+			class:cron-invalid={!validation.ok}
+			spellcheck="false"
+			placeholder="0 3 * * *"
+			aria-label="Custom cron expression"
+			value={shown}
+			{disabled}
+			oninput={onInput}
+			onblur={commit}
+			onkeydown={onKeydown}
+		/>
+		{#if !validation.ok}
+			<div class="cron-schedule-note cron-error">{validation.error}</div>
+		{:else if description}
+			<div class="cron-schedule-note">{description}</div>
+		{/if}
 	{/if}
 </div>
 
 <style>
+	/* Matches the gap the surrounding field uses between control and note. */
 	.cron-schedule {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 4px;
 		min-width: 0;
+	}
+
+	/*
+	 * On macOS, Obsidian right-aligns dropdown labels inside the settings
+	 * modal (.mod-macos:not(.is-mobile) .mod-settings sets
+	 * --dropdown-text-align: end), which suits the narrow control column of an
+	 * ordinary setting row but leaves this full-width field's label stranded
+	 * away from the custom input stacked beneath it. .dropdown resolves its
+	 * text-align through that variable, so redeclaring it here is the whole
+	 * fix: a value set on the element beats the one inherited from the modal.
+	 */
+	.cron-schedule-select {
+		width: 100%;
+		--dropdown-text-align: start;
 	}
 
 	.cron-schedule-input {

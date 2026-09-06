@@ -21,24 +21,23 @@ export interface CronJob {
 export interface CronSettings {
 	version: 1;
 	jobs: CronJob[];
-	defaultSchedule: string;
 	/** Overrides the detected login shell when set. */
 	loginShellOverride: string | null;
 	/** Prepended to PATH inside the runner. */
 	extraPath: string[];
-	removeJobsOnDisable: boolean;
 	logMaxBytes: number;
 }
 
 export const DEFAULT_SETTINGS: CronSettings = {
 	version: 1,
 	jobs: [],
-	defaultSchedule: "0 * * * *",
 	loginShellOverride: null,
 	extraPath: [],
-	removeJobsOnDisable: true,
 	logMaxBytes: 1024 * 1024,
 };
+
+/** Schedule a newly discovered script is given. It stays disabled until the user turns it on. */
+export const DEFAULT_SCHEDULE = "0 * * * *";
 
 export const CRON_FOLDER_NAME = "cron";
 export const RUNNER_FILE_NAME = "_runner.sh";

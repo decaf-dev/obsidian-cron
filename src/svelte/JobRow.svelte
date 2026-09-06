@@ -12,6 +12,9 @@
 	let { view, service, blocked }: Props = $props();
 
 	const job = $derived(view.job);
+	// Job ids are slug-safe, so they make usable element ids.
+	const nameId = $derived(`cron-name-${job.id}`);
+	const scheduleId = $derived(`cron-schedule-${job.id}`);
 	const errors = $derived(view.diagnostics.filter((d) => d.level === "error"));
 	const warnings = $derived(view.diagnostics.filter((d) => d.level === "warning"));
 	const canEnable = $derived(!blocked && errors.length === 0);
@@ -33,26 +36,49 @@
 </script>
 
 <div class="cron-job" class:cron-job-inactive={!view.scheduled}>
-	<div class="cron-job-main">
-		<div class="cron-job-identity">
+	<div class="cron-job-fields">
+		<div class="cron-field">
+			<label class="cron-field-label" for={nameId}>Name</label>
 			<input
+				id={nameId}
 				type="text"
 				class="cron-job-name"
-				aria-label="Job name"
 				value={job.name}
 				onblur={onRename}
 				onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
 			/>
-			<code class="cron-job-file">{job.fileName}</code>
+			<span class="cron-field-note">{job.fileName}</span>
 		</div>
 
-		<ScheduleInput
-			value={job.schedule}
-			disabled={job.missing}
-			onCommit={(schedule) => void service.updateJob(job.id, { schedule })}
-		/>
+		<div class="cron-field">
+			<label class="cron-field-label" for={scheduleId}>Schedule</label>
+			<ScheduleInput
+				id={scheduleId}
+				value={job.schedule}
+				disabled={job.missing}
+				onCommit={(schedule) => void service.updateJob(job.id, { schedule })}
+			/>
+		</div>
+	</div>
 
-		<div class="cron-job-actions">
+	<div class="cron-job-footer">
+		<div class="cron-job-status">
+			{#if view.status}
+				<span class:cron-error={view.status.exitCode !== 0}>
+					Last run {formatLastRun(view.status.ranAt)}
+					{view.status.exitCode === 0
+						? "succeeded"
+						: `failed with exit code ${view.status.exitCode}`}
+				</span>
+			{:else}
+				<span>Has not run yet.</span>
+			{/if}
+			{#if job.enabled && !view.scheduled}
+				<span class="cron-error">Not scheduled.</span>
+			{/if}
+		</div>
+
+		<div class="cron-job-controls">
 			<label class="cron-toggle" title={toggleTitle}>
 				<input
 					type="checkbox"
@@ -66,43 +92,30 @@
 				<span>Enabled</span>
 			</label>
 
-			<button
-				type="button"
-				disabled={view.running || job.missing}
-				onclick={() => void service.runNow(job.id)}
-			>
-				{view.running ? "Running..." : "Run now"}
-			</button>
-
-			<button type="button" onclick={() => void service.openLog(job.id)}>Log</button>
-
-			{#if job.missing}
-				<!-- Only offered for a script that is gone: while the file is
-				     still there, the next scan would re-add the job from scratch
-				     and lose its name and schedule. -->
+			<div class="cron-job-buttons">
 				<button
 					type="button"
-					class="cron-remove"
-					aria-label="Remove job"
-					title="Forget this job. Its script is no longer in the cron folder."
-					onclick={() => void service.removeJob(job.id)}>Remove</button
+					disabled={view.running || job.missing}
+					onclick={() => void service.runNow(job.id)}
 				>
-			{/if}
-		</div>
-	</div>
+					{view.running ? "Running..." : "Run now"}
+				</button>
 
-	<div class="cron-job-status">
-		{#if view.status}
-			<span class:cron-error={view.status.exitCode !== 0}>
-				Last run {formatLastRun(view.status.ranAt)}
-				{view.status.exitCode === 0 ? "succeeded" : `failed with exit code ${view.status.exitCode}`}
-			</span>
-		{:else}
-			<span>Has not run yet.</span>
-		{/if}
-		{#if job.enabled && !view.scheduled}
-			<span class="cron-error">Not scheduled.</span>
-		{/if}
+				<button type="button" onclick={() => void service.openLog(job.id)}>Log</button>
+
+				{#if job.missing}
+					<!-- Only offered for a script that is gone: while the file is
+					     still there, the next scan would re-add the job from scratch
+					     and lose its name and schedule. -->
+					<button
+						type="button"
+						class="cron-remove"
+						title="Forget this job. Its script is no longer in the cron folder."
+						onclick={() => void service.removeJob(job.id)}>Remove</button
+					>
+				{/if}
+			</div>
+		</div>
 	</div>
 
 	{#each errors as diagnostic (diagnostic.message)}
@@ -129,34 +142,48 @@
 	.cron-job {
 		border: 1px solid var(--background-modifier-border);
 		border-radius: var(--radius-m);
-		padding: 12px;
+		padding: 16px;
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 14px;
 	}
 
 	.cron-job-inactive {
 		background: var(--background-primary-alt);
 	}
 
-	.cron-job-main {
+	.cron-job-fields {
 		display: grid;
-		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
-		gap: 12px;
-		align-items: start;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: 22px;
 	}
 
 	@media (max-width: 720px) {
-		.cron-job-main {
+		.cron-job-fields {
 			grid-template-columns: 1fr;
 		}
 	}
 
-	.cron-job-identity {
+	.cron-field {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 4px;
 		min-width: 0;
+	}
+
+	.cron-field-label {
+		font-size: var(--font-ui-smaller);
+		font-weight: var(--font-medium);
+		color: var(--text-muted);
+	}
+
+	/* Deliberately not a <code> element: Obsidian's code styling would make
+	   this larger and darker than the schedule's note sitting beside it. */
+	.cron-field-note {
+		font-family: var(--font-monospace);
+		font-size: var(--font-ui-smaller);
+		color: var(--text-muted);
+		overflow-wrap: anywhere;
 	}
 
 	.cron-job-name {
@@ -164,36 +191,51 @@
 		font-weight: var(--font-semibold);
 	}
 
-	.cron-job-file {
-		font-size: var(--font-ui-smaller);
-		color: var(--text-muted);
-		overflow-wrap: anywhere;
+	/* The fields and the action bar are separate concerns, so a rule divides
+	   them rather than relying on whitespace alone. */
+	.cron-job-footer {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding-top: 18px;
+		border-top: 1px solid var(--background-modifier-border);
 	}
 
-	.cron-job-actions {
+	.cron-job-controls {
 		display: flex;
 		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	/* Pinned right whether or not the row wraps onto its own line. */
+	.cron-job-buttons {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
 		gap: 8px;
 		flex-wrap: wrap;
+		margin-left: auto;
+	}
+
+	.cron-job-status {
+		display: flex;
+		gap: 8px;
+		flex-wrap: wrap;
+		font-size: var(--font-ui-smaller);
+		color: var(--text-muted);
 	}
 
 	.cron-toggle {
 		display: flex;
 		align-items: center;
-		gap: 4px;
+		gap: 6px;
 		font-size: var(--font-ui-small);
 		white-space: nowrap;
 	}
 
 	.cron-remove {
 		color: var(--text-error);
-	}
-
-	.cron-job-status {
-		display: flex;
-		gap: 8px;
-		font-size: var(--font-ui-smaller);
-		color: var(--text-muted);
 	}
 
 	.cron-diagnostic {

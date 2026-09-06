@@ -28,7 +28,7 @@ export default class CronPlugin extends Plugin {
 		this.addCommand({
 			id: "rescan-scripts",
 			name: "Rescan script folder",
-			callback: () => void this.service.refreshFromDisk(),
+			callback: () => void this.service.rescan(),
 		});
 
 		this.addCommand({
@@ -62,7 +62,9 @@ export default class CronPlugin extends Plugin {
 	}
 
 	onunload() {
-		if (!this.quitting && this.settings.removeJobsOnDisable) {
+		// Quitting Obsidian leaves the crontab alone, so jobs keep running.
+		// Disabling or uninstalling the plugin clears its block.
+		if (!this.quitting) {
 			this.service.teardownCrontabSync();
 		}
 		this.service.dispose();

@@ -1,20 +1,17 @@
 import { PluginSettingTab } from "obsidian";
 import type { App, Setting, SettingDefinitionItem } from "obsidian";
 import { mount, unmount } from "svelte";
-import DiagnosticsPanel from "../svelte/DiagnosticsPanel.svelte";
 import JobList from "../svelte/JobList.svelte";
+import PathList from "../svelte/PathList.svelte";
 import type CronPlugin from "../main";
-import { validateCronExpression } from "./cron-expression";
 import { createJobStore } from "../svelte/store.svelte";
 import { fileUrl } from "./vault-paths";
 
 /** Keys handled by getControlValue / setControlValue below. */
 type ControlKey =
-	| "defaultSchedule"
 	| "loginShellOverride"
 	| "extraPath"
-	| "logMaxBytes"
-	| "removeJobsOnDisable";
+	| "logMaxBytes";
 
 export class CronSettingTab extends PluginSettingTab {
 	/** One subscription shared by every component this tab mounts. */
@@ -45,16 +42,12 @@ export class CronSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const settings = this.plugin.settings;
 		switch (key as ControlKey) {
-			case "defaultSchedule":
-				return settings.defaultSchedule;
 			case "loginShellOverride":
 				return settings.loginShellOverride ?? "";
 			case "extraPath":
 				return settings.extraPath.join(":");
 			case "logMaxBytes":
 				return Math.round(settings.logMaxBytes / 1024);
-			case "removeJobsOnDisable":
-				return settings.removeJobsOnDisable;
 			default:
 				return undefined;
 		}
@@ -63,9 +56,6 @@ export class CronSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const service = this.plugin.service;
 		switch (key as ControlKey) {
-			case "defaultSchedule":
-				await service.updateSettings({ defaultSchedule: String(value) });
-				return;
 			case "loginShellOverride": {
 				const shell = String(value).trim();
 				await service.updateSettings({ loginShellOverride: shell === "" ? null : shell });
@@ -81,9 +71,6 @@ export class CronSettingTab extends PluginSettingTab {
 				return;
 			case "logMaxBytes":
 				await service.updateSettings({ logMaxBytes: Math.max(1, Number(value)) * 1024 });
-				return;
-			case "removeJobsOnDisable":
-				await service.updateSettings({ removeJobsOnDisable: Boolean(value) });
 				return;
 		}
 	}
@@ -102,23 +89,15 @@ export class CronSettingTab extends PluginSettingTab {
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
 					},
-				],
-			},
-			{
-				type: "group",
-				heading: "Defaults",
-				items: [
 					{
-						name: "Default schedule",
-						desc: "Given to newly discovered scripts. They stay disabled until you turn them on.",
-						control: {
-							type: "text",
-							key: "defaultSchedule" satisfies ControlKey,
-							defaultValue: "0 * * * *",
-							validate: (value: string) => {
-								const result = validateCronExpression(value);
-								return result.ok ? undefined : result.error;
-							},
+						name: "Rescan cron folder",
+						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Rescan")
+									.onClick(() => void service.rescan())
+							);
 						},
 					},
 				],
@@ -146,6 +125,13 @@ export class CronSettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: "Effective PATH",
+						desc: "Where a scheduled job looks for the commands it runs, in order.",
+						searchable: false,
+						render: (setting: Setting) =>
+							mountUnderDesc(setting, PathList, { store: this.getStore() }),
+					},
+					{
 						name: "Log size limit",
 						desc: "Kilobytes to keep per job. A log past this size is trimmed to half of it before the next run.",
 						control: {
@@ -161,38 +147,31 @@ export class CronSettingTab extends PluginSettingTab {
 				heading: "Crontab",
 				items: [
 					{
-						name: "Remove jobs when the plugin is disabled",
-						desc: "Jobs always survive quitting Obsidian. This controls whether disabling or uninstalling the plugin also clears them from your crontab.",
-						control: {
-							type: "toggle",
-							key: "removeJobsOnDisable" satisfies ControlKey,
-							defaultValue: true,
-						},
-					},
-					{
 						name: "Remove all managed jobs now",
 						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
-						action: () => void service.removeAllManagedJobs(),
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Remove all")
+									.setDestructive()
+									.onClick(() => void service.removeAllManagedJobs())
+							);
+						},
 					},
 					{
 						name: "Open cron folder",
 						desc: service.getPaths()?.folder ?? "Unavailable for this vault.",
-						action: () => {
-							const paths = service.getPaths();
-							if (paths !== null) window.open(fileUrl(paths.folder));
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Open folder")
+									.setDisabled(service.getPaths() === null)
+									.onClick(() => {
+										const paths = service.getPaths();
+										if (paths !== null) window.open(fileUrl(paths.folder));
+									})
+							);
 						},
-						disabled: () => service.getPaths() === null,
-					},
-				],
-			},
-			{
-				type: "group",
-				heading: "Diagnostics",
-				items: [
-					{
-						name: "Status",
-						searchable: false,
-						render: (setting: Setting) => mountInto(setting, DiagnosticsPanel, { store: this.getStore() }),
 					},
 				],
 			},
@@ -214,7 +193,28 @@ function mountInto<Props extends Record<string, unknown>>(
 ): () => void {
 	setting.settingEl.empty();
 	setting.settingEl.addClass("cron-svelte-host");
-	const view = mount(component, { target: setting.settingEl, props });
+	return mountAt(setting.settingEl, component, props);
+}
+
+/**
+ * Hosts a Svelte component under a setting row's description, keeping the
+ * row's own name, description and layout above it. For content too wide to
+ * sit in the control column.
+ */
+function mountUnderDesc<Props extends Record<string, unknown>>(
+	setting: Setting,
+	component: Parameters<typeof mount<Props, Record<string, unknown>>>[0],
+	props: Props
+): () => void {
+	return mountAt(setting.descEl.createDiv(), component, props);
+}
+
+function mountAt<Props extends Record<string, unknown>>(
+	target: HTMLElement,
+	component: Parameters<typeof mount<Props, Record<string, unknown>>>[0],
+	props: Props
+): () => void {
+	const view = mount(component, { target, props });
 	return () => {
 		void unmount(view);
 	};

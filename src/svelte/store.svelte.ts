@@ -5,6 +5,7 @@ export interface JobStore {
 	readonly views: JobView[];
 	readonly diagnostics: Diagnostic[];
 	readonly blocked: boolean;
+	readonly resolvedPath: string | null;
 }
 
 /**
@@ -18,11 +19,13 @@ export function createJobStore(service: CronService): JobStore & { dispose(): vo
 	let views = $state<JobView[]>(service.getViews());
 	let diagnostics = $state<Diagnostic[]>(service.getDiagnostics());
 	let blocked = $state<boolean>(service.isBlocked());
+	let resolvedPath = $state<string | null>(service.getResolvedPath());
 
 	const unsubscribe = service.subscribe(() => {
 		views = service.getViews();
 		diagnostics = service.getDiagnostics();
 		blocked = service.isBlocked();
+		resolvedPath = service.getResolvedPath();
 	});
 
 	return {
@@ -34,6 +37,9 @@ export function createJobStore(service: CronService): JobStore & { dispose(): vo
 		},
 		get blocked() {
 			return blocked;
+		},
+		get resolvedPath() {
+			return resolvedPath;
 		},
 		dispose: unsubscribe,
 	};

@@ -10,24 +10,20 @@ export interface JobStore {
 /**
  * Mirrors the service's state into runes.
  *
- * Must be called during component setup: the `$effect` both subscribes and
- * returns the unsubscribe, so the listener goes away with the component. The
- * service arrives as a getter so reading it here does not capture a prop.
+ * Created once per settings tab and shared by the components, so there is a
+ * single subscription rather than one per component. `subscribe` returns its
+ * own unsubscribe, which the caller owns.
  */
-export function createJobStore(getService: () => CronService): JobStore {
-	const service = getService();
-
+export function createJobStore(service: CronService): JobStore & { dispose(): void } {
 	let views = $state<JobView[]>(service.getViews());
 	let diagnostics = $state<Diagnostic[]>(service.getDiagnostics());
 	let blocked = $state<boolean>(service.isBlocked());
 
-	$effect(() =>
-		service.subscribe(() => {
-			views = service.getViews();
-			diagnostics = service.getDiagnostics();
-			blocked = service.isBlocked();
-		})
-	);
+	const unsubscribe = service.subscribe(() => {
+		views = service.getViews();
+		diagnostics = service.getDiagnostics();
+		blocked = service.isBlocked();
+	});
 
 	return {
 		get views() {
@@ -39,6 +35,7 @@ export function createJobStore(getService: () => CronService): JobStore {
 		get blocked() {
 			return blocked;
 		},
+		dispose: unsubscribe,
 	};
 }
 

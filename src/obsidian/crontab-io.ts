@@ -2,14 +2,6 @@ import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { CommandNotFoundError, run, runSync } from "./exec";
 
-/** No usable `crontab` binary on this machine. */
-export class CrontabUnavailableError extends Error {
-	constructor() {
-		super("No crontab command was found. Cron jobs cannot be scheduled on this machine.");
-		this.name = "CrontabUnavailableError";
-	}
-}
-
 /** `crontab` ran but refused. Carries stderr verbatim, which is the useful part. */
 export class CrontabCommandError extends Error {
 	constructor(message: string, readonly stderr: string, readonly code: number) {

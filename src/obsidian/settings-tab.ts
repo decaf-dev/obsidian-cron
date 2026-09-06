@@ -5,6 +5,7 @@ import DiagnosticsPanel from "../svelte/DiagnosticsPanel.svelte";
 import JobList from "../svelte/JobList.svelte";
 import type CronPlugin from "../main";
 import { validateCronExpression } from "./cron-expression";
+import { createJobStore } from "../svelte/store.svelte";
 import { fileUrl } from "./vault-paths";
 
 /** Keys handled by getControlValue / setControlValue below. */
@@ -16,11 +17,25 @@ type ControlKey =
 	| "removeJobsOnDisable";
 
 export class CronSettingTab extends PluginSettingTab {
+	/** One subscription shared by every component this tab mounts. */
+	private store: ReturnType<typeof createJobStore> | null = null;
+
 	constructor(
 		app: App,
 		private readonly plugin: CronPlugin
 	) {
 		super(app, plugin);
+	}
+
+	hide(): void {
+		this.store?.dispose();
+		this.store = null;
+		super.hide();
+	}
+
+	private getStore(): ReturnType<typeof createJobStore> {
+		this.store ??= createJobStore(this.plugin.service);
+		return this.store;
 	}
 
 	/**
@@ -85,7 +100,7 @@ export class CronSettingTab extends PluginSettingTab {
 						name: "Scheduled scripts",
 						desc: "Every shell script in the cron folder, with the schedule it runs on.",
 						searchable: false,
-						render: (setting: Setting) => mountInto(setting, JobList, { service }),
+						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
 					},
 				],
 			},
@@ -177,7 +192,7 @@ export class CronSettingTab extends PluginSettingTab {
 					{
 						name: "Status",
 						searchable: false,
-						render: (setting: Setting) => mountInto(setting, DiagnosticsPanel, { service }),
+						render: (setting: Setting) => mountInto(setting, DiagnosticsPanel, { store: this.getStore() }),
 					},
 				],
 			},

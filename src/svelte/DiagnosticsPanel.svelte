@@ -1,13 +1,11 @@
 <script lang="ts">
-	import type { CronService } from "../obsidian/cron-service";
-	import { createJobStore } from "./store.svelte";
+	import type { JobStore } from "./store.svelte";
 
 	interface Props {
-		service: CronService;
+		store: JobStore;
 	}
 
-	let { service }: Props = $props();
-	const store = createJobStore(() => service);
+	let { store }: Props = $props();
 </script>
 
 <div class="cron-diagnostics">

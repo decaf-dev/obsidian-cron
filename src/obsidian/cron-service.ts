@@ -1,5 +1,4 @@
 import { Notice, debounce } from "obsidian";
-import type { App } from "obsidian";
 import fs from "node:fs/promises";
 import os from "node:os";
 import {
@@ -16,8 +15,7 @@ import {
 	writeCrontab,
 	writeCrontabSync,
 } from "./crontab-io";
-import { JobCommandRegistry } from "./commands";
-import type { JobCommandHost } from "./commands";
+import { removeJobCommands, syncJobCommands } from "./commands";
 import { getEnvironmentDiagnostics, getJobDiagnostics, isSchedulable } from "./diagnostics";
 import type { Diagnostic } from "./diagnostics";
 import { makeJobId, reconcileJobs } from "./reconcile";
@@ -33,16 +31,9 @@ import type { ScriptInfo, StopWatching } from "./script-scanner";
 import { shellSingleQuote } from "./shell-quote";
 import { validateCronExpression } from "./cron-expression";
 import type { CronJob, CronSettings } from "./settings";
+import type CronPlugin from "../main";
 import { fileUrl, getCronPaths, getLogPath, getScriptPath, getStatusPath } from "./vault-paths";
 import type { CronPaths } from "./vault-paths";
-
-export interface CronServiceHost {
-	app: App;
-	settings: CronSettings;
-	manifestVersion: string;
-	saveSettings(): Promise<void>;
-	commands: JobCommandHost;
-}
 
 export interface JobStatus {
 	/** Unix seconds of the last completed run, from either cron or Run now. */
@@ -75,28 +66,27 @@ export class CronService {
 	private pathError: string | null = null;
 	private stopWatching: StopWatching | null = null;
 	private listeners = new Set<() => void>();
-	private commandRegistry: JobCommandRegistry;
+	/** Command id -> the name it was registered under. */
+	private commands: ReadonlyMap<string, string> = new Map();
 	/** Guards against rewriting the crontab when nothing cron cares about changed. */
 	private lastSignature: string | null = null;
 
 	readonly requestCrontabSync = debounce(() => void this.syncCrontab(), SYNC_DEBOUNCE_MS, true);
 
-	constructor(private readonly host: CronServiceHost) {
-		this.commandRegistry = new JobCommandRegistry(host.commands, (jobId) => void this.runNow(jobId));
-	}
+	constructor(private readonly plugin: CronPlugin) {}
 
 	// --- lifecycle ---------------------------------------------------------
 
 	async initialize(): Promise<void> {
 		try {
-			this.paths = getCronPaths(this.host.app);
+			this.paths = getCronPaths(this.plugin.app);
 		} catch (error) {
 			this.pathError = error instanceof Error ? error.message : String(error);
 			this.notify();
 			return;
 		}
 
-		this.loginShell = detectLoginShell(this.host.settings.loginShellOverride);
+		this.loginShell = detectLoginShell(this.plugin.settings.loginShellOverride);
 		this.crontabBin = await resolveCrontabBinary();
 
 		await ensureCronFolders(this.paths);
@@ -115,7 +105,8 @@ export class CronService {
 		this.requestCrontabSync.cancel();
 		this.stopWatching?.();
 		this.stopWatching = null;
-		this.commandRegistry.clear();
+		removeJobCommands(this.plugin, this.commands);
+		this.commands = new Map();
 		this.listeners.clear();
 	}
 
@@ -151,7 +142,7 @@ export class CronService {
 
 	getViews(): JobView[] {
 		const byName = new Map(this.scripts.map((script) => [script.fileName, script]));
-		return this.host.settings.jobs.map((job) => {
+		return this.plugin.settings.jobs.map((job) => {
 			const script = byName.get(job.fileName);
 			return {
 				job,
@@ -198,18 +189,18 @@ export class CronService {
 
 		this.scripts = await scanScripts(this.paths);
 		const result = reconcileJobs(
-			this.host.settings.jobs,
+			this.plugin.settings.jobs,
 			this.scripts.map((script) => script.fileName),
-			{ schedule: this.host.settings.defaultSchedule },
+			{ schedule: this.plugin.settings.defaultSchedule },
 			(fileName) => makeJobId(fileName, randomSuffix)
 		);
 
 		if (result.changed) {
-			this.host.settings.jobs = result.jobs;
-			await this.host.saveSettings();
+			this.plugin.settings.jobs = result.jobs;
+			await this.plugin.saveSettings();
 		}
 
-		this.commandRegistry.sync(this.host.settings.jobs);
+		this.syncCommands();
 		await this.readStatuses();
 		this.notify();
 
@@ -225,7 +216,7 @@ export class CronService {
 		if (this.paths === null) return;
 		const paths = this.paths;
 		await Promise.all(
-			this.host.settings.jobs.map(async (job) => {
+			this.plugin.settings.jobs.map(async (job) => {
 				try {
 					const raw = await fs.readFile(getStatusPath(paths, job.id), "utf8");
 					const [ranAt, exitCode] = raw.trim().split(/\s+/);
@@ -243,21 +234,21 @@ export class CronService {
 	// --- mutations ---------------------------------------------------------
 
 	async updateJob(id: string, patch: Partial<CronJob>): Promise<void> {
-		const jobs = this.host.settings.jobs;
+		const jobs = this.plugin.settings.jobs;
 		const index = jobs.findIndex((job) => job.id === id);
 		if (index === -1) return;
 
 		jobs[index] = { ...jobs[index], ...patch };
-		await this.host.saveSettings();
-		this.commandRegistry.sync(jobs);
+		await this.plugin.saveSettings();
+		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
 	}
 
 	async removeJob(id: string): Promise<void> {
-		this.host.settings.jobs = this.host.settings.jobs.filter((job) => job.id !== id);
-		await this.host.saveSettings();
-		this.commandRegistry.sync(this.host.settings.jobs);
+		this.plugin.settings.jobs = this.plugin.settings.jobs.filter((job) => job.id !== id);
+		await this.plugin.saveSettings();
+		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
 	}
@@ -276,11 +267,11 @@ export class CronService {
 	}
 
 	async updateSettings(patch: Partial<CronSettings>): Promise<void> {
-		Object.assign(this.host.settings, patch);
-		await this.host.saveSettings();
+		Object.assign(this.plugin.settings, patch);
+		await this.plugin.saveSettings();
 
 		if ("loginShellOverride" in patch) {
-			this.loginShell = detectLoginShell(this.host.settings.loginShellOverride);
+			this.loginShell = detectLoginShell(this.plugin.settings.loginShellOverride);
 			this.resolvedPath = null;
 			void this.probeLoginShellPath();
 		}
@@ -355,7 +346,7 @@ export class CronService {
 		const byName = new Map(this.scripts.map((script) => [script.fileName, script]));
 
 		const entries: ManagedEntry[] = [];
-		for (const job of this.host.settings.jobs) {
+		for (const job of this.plugin.settings.jobs) {
 			if (!isSchedulable(job, byName.get(job.fileName))) continue;
 			const validation = validateCronExpression(job.schedule);
 			if (!validation.ok) continue;
@@ -465,20 +456,29 @@ export class CronService {
 
 	// --- helpers -----------------------------------------------------------
 
+	private syncCommands(): void {
+		this.commands = syncJobCommands(
+			this.plugin,
+			this.plugin.settings.jobs,
+			this.commands,
+			(jobId) => void this.runNow(jobId)
+		);
+	}
+
 	private findJob(id: string): CronJob | undefined {
-		return this.host.settings.jobs.find((job) => job.id === id);
+		return this.plugin.settings.jobs.find((job) => job.id === id);
 	}
 
 	private async writeRunner(): Promise<void> {
 		if (this.paths === null) return;
 		await ensureRunnerScript(this.paths.runner, {
-			pluginVersion: this.host.manifestVersion,
+			pluginVersion: this.plugin.manifest.version,
 			loginShell: this.loginShell,
 			vaultPath: this.paths.vault,
 			logsDir: this.paths.logs,
 			locksDir: this.paths.locks,
-			extraPath: this.host.settings.extraPath,
-			logMaxBytes: this.host.settings.logMaxBytes,
+			extraPath: this.plugin.settings.extraPath,
+			logMaxBytes: this.plugin.settings.logMaxBytes,
 		});
 	}
 

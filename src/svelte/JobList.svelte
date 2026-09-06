@@ -1,14 +1,14 @@
 <script lang="ts">
 	import type { CronService } from "../obsidian/cron-service";
 	import JobRow from "./JobRow.svelte";
-	import { createJobStore } from "./store.svelte";
+	import type { JobStore } from "./store.svelte";
 
 	interface Props {
 		service: CronService;
+		store: JobStore;
 	}
 
-	let { service }: Props = $props();
-	const store = createJobStore(() => service);
+	let { service, store }: Props = $props();
 	const folder = $derived(service.getPaths()?.folder ?? null);
 </script>
 

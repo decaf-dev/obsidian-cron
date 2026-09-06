@@ -19,16 +19,7 @@ export default class CronPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		this.service = new CronService({
-			app: this.app,
-			settings: this.settings,
-			manifestVersion: this.manifest.version,
-			saveSettings: () => this.saveSettings(),
-			commands: {
-				addCommand: this.addCommand.bind(this),
-				removeCommand: this.removeCommand.bind(this),
-			},
-		});
+		this.service = new CronService(this);
 
 		this.registerDomEvent(window, "beforeunload", () => {
 			this.quitting = true;

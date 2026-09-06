@@ -1,11 +1,6 @@
 import type { Plugin } from "obsidian";
 import type { CronJob } from "./settings";
 
-export interface JobCommandHost {
-	addCommand: Plugin["addCommand"];
-	removeCommand: Plugin["removeCommand"];
-}
-
 function commandId(job: CronJob): string {
 	// No plugin id prefix: addCommand and removeCommand both apply it.
 	return `run-${job.id}`;
@@ -16,46 +11,41 @@ function commandName(job: CronJob): string {
 }
 
 /**
- * Keeps the command palette in step with the job list.
+ * Brings the command palette in step with the job list, and returns the
+ * registrations so the next call can diff against them.
  *
- * Tracks the name each command was registered under, because Obsidian caches
- * the resolved name — a renamed job needs the command removed and re-added
- * rather than simply overwritten.
+ * The registered name is tracked because Obsidian caches the resolved name:
+ * a renamed job needs its command removed and re-added, not overwritten.
  */
-export class JobCommandRegistry {
-	private registered = new Map<string, string>();
+export function syncJobCommands(
+	plugin: Plugin,
+	jobs: readonly CronJob[],
+	registered: ReadonlyMap<string, string>,
+	onRun: (jobId: string) => void
+): Map<string, string> {
+	const next = new Map(registered);
 
-	constructor(
-		private readonly host: JobCommandHost,
-		private readonly onRun: (jobId: string) => void
-	) {}
+	const desired = new Map<string, CronJob>();
+	for (const job of jobs) desired.set(commandId(job), job);
 
-	sync(jobs: readonly CronJob[]): void {
-		const desired = new Map<string, CronJob>();
-		for (const job of jobs) desired.set(commandId(job), job);
-
-		for (const [id] of this.registered) {
-			const job = desired.get(id);
-			if (job === undefined || this.registered.get(id) !== commandName(job)) {
-				this.host.removeCommand(id);
-				this.registered.delete(id);
-			}
-		}
-
-		for (const [id, job] of desired) {
-			if (this.registered.has(id)) continue;
-			const name = commandName(job);
-			this.host.addCommand({
-				id,
-				name,
-				callback: () => this.onRun(job.id),
-			});
-			this.registered.set(id, name);
+	for (const [id, name] of registered) {
+		const job = desired.get(id);
+		if (job === undefined || name !== commandName(job)) {
+			plugin.removeCommand(id);
+			next.delete(id);
 		}
 	}
 
-	clear(): void {
-		for (const [id] of this.registered) this.host.removeCommand(id);
-		this.registered.clear();
+	for (const [id, job] of desired) {
+		if (next.has(id)) continue;
+		const name = commandName(job);
+		plugin.addCommand({ id, name, callback: () => onRun(job.id) });
+		next.set(id, name);
 	}
+
+	return next;
+}
+
+export function removeJobCommands(plugin: Plugin, registered: ReadonlyMap<string, string>): void {
+	for (const [id] of registered) plugin.removeCommand(id);
 }

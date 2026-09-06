@@ -1,0 +1,25 @@
+{
+  "extends": "@tsconfig/svelte/tsconfig.json",
+  "compilerOptions": {
+	"types": ["svelte", "node"],
+    "baseUrl": ".",
+    "inlineSources": true,
+    "module": "ESNext",
+    "target": "ES2021",
+    "allowJs": true,
+	"allowSyntheticDefaultImports": true,
+    "noImplicitAny": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "isolatedModules": true,
+    "strictNullChecks": true,
+    "lib": [
+      "ES2021",
+      "DOM"
+    ]
+  },
+  "include": [
+    "**/*.ts",
+	"**/*.svelte"
+  ]
+}

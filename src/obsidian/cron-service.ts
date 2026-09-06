@@ -307,11 +307,20 @@ export class CronService {
 		const index = jobs.findIndex((job) => job.id === id);
 		if (index === -1) return;
 
-		jobs[index] = { ...jobs[index], ...patch };
+		const previous = jobs[index];
+		const job = { ...previous, ...patch };
+		jobs[index] = job;
 		await this.plugin.saveSettings();
 		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
+
+		// Announces the user's intent, which the crontab write then follows. A
+		// write that fails reports itself separately. Renames and schedule
+		// edits stay quiet, since the row already shows their result.
+		if (patch.enabled !== undefined && patch.enabled !== previous.enabled) {
+			new Notice(`${job.name} is now ${job.enabled ? "enabled" : "disabled"}.`);
+		}
 	}
 
 	/**

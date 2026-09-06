@@ -56,6 +56,8 @@ const context = await esbuild.context({
 		"@lezer/highlight",
 		"@lezer/lr",
 		...builtinModules,
+		// builtinModules lists bare names only; the node: forms need listing too.
+		...builtinModules.map((name) => `node:${name}`),
 	],
 	format: "cjs",
 	target: "es2021",

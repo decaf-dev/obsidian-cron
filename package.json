@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-cron",
+	"version": "0.1.0",
+	"description": "Schedule cron jobs on your machine from inside Obsidian",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -12,7 +12,7 @@
 		"reload": "node reload-plugin.mjs"
 	},
 	"keywords": [],
-	"author": "",
+	"author": "DecafDev",
 	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/state": "6.5.0",

@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "obsidian-sample-plugin",
+      "name": "obsidian-cron",
       "dependencies": {
         "svelte": "^5.57.0",
       },

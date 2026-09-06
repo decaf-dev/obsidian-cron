@@ -6,6 +6,104 @@ Point the plugin at a folder of shell scripts and it manages the corresponding c
 
 ---
 
+## How it works
+
+Put your shell scripts in the `cron` folder inside your vault's config folder:
+
+```
+<your vault>/.obsidian/cron/
+```
+
+The plugin picks up every `.sh` file it finds there and lists it under **Settings > Cron**. A newly discovered script starts out **disabled**, so nothing runs until you give it a schedule and turn it on. Enabling a job writes it to your crontab; disabling it takes it back out.
+
+Each job has:
+
+-   a **name**, which is yours to change and is only used for display and for the command palette
+-   a **schedule**, written as a standard five-field cron expression (`0 3 * * *`) or a macro (`@daily`)
+-   an **enable toggle**
+
+Every job also gets a **Run script: \<name\>** command in the command palette, so you can run it immediately instead of waiting for its schedule. A manual run goes through the same runner as a scheduled one, so the two behave identically.
+
+### Your existing cron jobs are safe
+
+Everything this plugin writes lives inside a delimited block:
+
+```
+# BEGIN obsidian-cron
+...
+# END obsidian-cron
+```
+
+Lines outside that block are never touched. If the block is ever damaged — say the `# END` line gets deleted — the plugin refuses to write anything at all and tells you, rather than guessing where the block ends.
+
+To remove the block yourself at any time, use **Remove all managed jobs now** in the settings. That also turns every job off, so the block does not come back the next time something changes.
+
+### Writing a script
+
+Scripts need the executable bit set. If one is missing it, the settings tab says so and offers a **Make executable** button.
+
+```bash
+#!/bin/sh
+echo "Backing up..."
+```
+
+Each run gets:
+
+-   the **vault root** as its working directory
+-   `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_CRON_JOB_ID` in its environment
+-   a log at `.obsidian/cron/logs/<job id>.log`, trimmed once it passes the size limit in settings
+
+If a scheduled run comes around while the previous one is still going, it is skipped rather than run twice.
+
+### PATH and your shell
+
+Jobs run under your **login shell**, which reads `.zprofile` (or `.bash_profile`) but **not** `.zshrc` — that file is only read by interactive shells. Homebrew's installer writes to `.zprofile`, so `/opt/homebrew/bin` is normally on the path. Tools you set up in `.zshrc` will not be.
+
+If something is missing, either add its directory to **Extra PATH entries** in settings or use an absolute path in your script. The settings tab shows the exact `PATH` your scheduled jobs will see.
+
+### macOS: scheduled jobs and protected folders
+
+macOS blocks `cron` from reaching `~/Desktop`, `~/Documents`, `~/Downloads` and iCloud Drive, and the failure is **silent** — the job simply never does anything. The plugin warns you when your vault is in one of these folders.
+
+**The simplest fix is to keep your vault somewhere else**, such as `~/Vaults` or `~/Notes`. Those paths are not protected, so nothing needs granting and scheduled jobs work immediately.
+
+If the vault has to stay where it is, the alternative is to grant Full Disk Access to cron:
+
+1. Open **System Settings > Privacy & Security > Full Disk Access**
+2. Click **+**, press **Cmd-Shift-G**, and enter `/usr/sbin/cron`
+3. Enable the entry
+
+Weigh that up before doing it. The grant goes to `/usr/sbin/cron` itself and is inherited by **every** job in **every** crontab, not only this plugin's, including ones added later. Full Disk Access is also wider than the folders you are trying to reach: it covers Mail, Messages, Safari data, Time Machine backups and other apps' sandboxed containers.
+
+Note that using `launchd` instead does not avoid this. A LaunchAgent inherits launchd's own permissions, not those of whatever loaded it, and hits the same denial.
+
+Running a job from the command palette works either way, because it inherits Obsidian's own permissions. So "works when I press Run now, never runs on schedule" is almost always this.
+
+### Quitting versus disabling
+
+Jobs keep running when Obsidian is closed — that is the point of using system cron. Quitting the app leaves your crontab alone.
+
+Disabling or uninstalling the plugin removes its block from your crontab. You can turn that off with **Remove jobs when the plugin is disabled**.
+
+---
+
+## Security
+
+Your scripts run with your full user privileges, exactly as if you had typed them into a terminal. A few things follow from that.
+
+**New scripts never run on their own.** A script the plugin discovers is added **disabled**, with no schedule in your crontab, until you turn it on yourself.
+
+**A vault that syncs is a code delivery channel.** If you use Obsidian Sync, iCloud, Dropbox or git, then whatever can write to your vault can put a script in `.obsidian/cron`. It will not run until you enable it, but two cases deserve care:
+
+-   changing the **contents** of a script that is already enabled changes what runs, with no further confirmation
+-   `.obsidian/plugins/cron/data.json` holds the enabled flags, so editing that file directly can schedule a job
+
+Treat `.obsidian/cron` as trusted code, the same way you would treat anything else you run on a schedule.
+
+**Only jobs you enable reach your crontab**, inside a delimited block, and your own cron jobs are never modified.
+
+---
+
 ## Platform support
 
 macOS and Linux only. Windows is not supported, as it has no `cron`.
@@ -45,6 +143,8 @@ node --version
     ```
 
     For a one-off production build, run `bun run build`.
+
+   Run the test suite with `bun test`. It covers the crontab splicing, the cron expression validator, job reconciliation, and the generated runner script end to end.
 
 3. Link `dist/` into your vault so Obsidian can load the plugin. The folder name must match the `id` in `manifest.json`:
 

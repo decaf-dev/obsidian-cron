@@ -35,7 +35,32 @@ export default defineConfig(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		// These timers belong to the plugin rather than to any window, and both
+		// modules are unit tested outside Obsidian, where `window` does not exist.
+		files: ['src/obsidian/exec.ts', 'src/obsidian/script-scanner.ts'],
+		rules: {
+			'obsidianmd/prefer-window-timers': 'off',
+		},
+	},
+	{
+		// Tests exercise the pure modules directly; the plugin-review rules
+		// target runtime code and only produce noise here.
+		files: ['tests/**/*.ts'],
+		rules: {
+			'obsidianmd/hardcoded-config-path': 'off',
+			'obsidianmd/prefer-window-timers': 'off',
+		},
+	},
 	...svelte.configs.recommended,
+	{
+		files: ['src/**/*.ts', 'src/**/*.svelte.ts'],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+	},
 	{
 		files: ['**/*.svelte', '**/*.svelte.ts'],
 		languageOptions: {

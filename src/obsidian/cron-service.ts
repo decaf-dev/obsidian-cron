@@ -232,7 +232,6 @@ export class CronService {
 		const result = reconcileJobs(
 			this.plugin.settings.jobs,
 			this.scripts.map((script) => script.fileName),
-			{ schedule: this.plugin.settings.defaultSchedule },
 			(fileName) => makeJobId(fileName, randomSuffix)
 		);
 

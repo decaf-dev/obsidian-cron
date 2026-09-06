@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import { defaultNameFor, makeJobId, reconcileJobs } from "../src/obsidian/reconcile";
 import type { CronJob } from "../src/obsidian/settings";
 
-const defaults = { schedule: "0 * * * *" };
 const ids = (fileName: string) => `${fileName.replace(/[^a-z0-9]+/gi, "-")}-fixed`;
 
 function job(overrides: Partial<CronJob> & Pick<CronJob, "fileName">): CronJob {
@@ -18,7 +17,7 @@ function job(overrides: Partial<CronJob> & Pick<CronJob, "fileName">): CronJob {
 
 describe("reconcileJobs", () => {
 	it("adds a discovered script as a disabled job", () => {
-		const result = reconcileJobs([], ["backup.sh"], defaults, ids);
+		const result = reconcileJobs([], ["backup.sh"], ids);
 		expect(result.added).toHaveLength(1);
 		expect(result.changed).toBe(true);
 		expect(result.jobs[0]).toMatchObject({
@@ -32,7 +31,7 @@ describe("reconcileJobs", () => {
 
 	it("reports no change when nothing moved", () => {
 		const existing = [job({ fileName: "backup.sh" })];
-		const result = reconcileJobs(existing, ["backup.sh"], defaults, ids);
+		const result = reconcileJobs(existing, ["backup.sh"], ids);
 		expect(result.changed).toBe(false);
 		expect(result.jobs[0]).toBe(existing[0]);
 	});
@@ -41,7 +40,6 @@ describe("reconcileJobs", () => {
 		const result = reconcileJobs(
 			[job({ fileName: "backup.sh", enabled: true, schedule: "*/5 * * * *" })],
 			[],
-			defaults,
 			ids
 		);
 		expect(result.nowMissing).toHaveLength(1);
@@ -56,7 +54,6 @@ describe("reconcileJobs", () => {
 		const result = reconcileJobs(
 			[job({ fileName: "backup.sh", missing: true, enabled: true })],
 			["backup.sh"],
-			defaults,
 			ids
 		);
 		expect(result.restored).toHaveLength(1);
@@ -64,13 +61,13 @@ describe("reconcileJobs", () => {
 	});
 
 	it("never deletes a job entry on its own", () => {
-		const result = reconcileJobs([job({ fileName: "gone.sh" })], [], defaults, ids);
+		const result = reconcileJobs([job({ fileName: "gone.sh" })], [], ids);
 		expect(result.jobs).toHaveLength(1);
 	});
 
 	it("preserves a customized name and id across reconciliation", () => {
 		const existing = [job({ fileName: "backup.sh", name: "Renamed by hand", id: "custom-1" })];
-		const result = reconcileJobs(existing, ["backup.sh"], defaults, ids);
+		const result = reconcileJobs(existing, ["backup.sh"], ids);
 		expect(result.jobs[0]).toMatchObject({ name: "Renamed by hand", id: "custom-1" });
 	});
 
@@ -78,7 +75,6 @@ describe("reconcileJobs", () => {
 		const result = reconcileJobs(
 			[job({ fileName: "backup.sh", id: "a" }), job({ fileName: "backup.sh", id: "b" })],
 			["backup.sh"],
-			defaults,
 			ids
 		);
 		expect(result.jobs).toHaveLength(1);

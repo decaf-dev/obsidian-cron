@@ -4,13 +4,11 @@ import { mount, unmount } from "svelte";
 import JobList from "../svelte/JobList.svelte";
 import PathList from "../svelte/PathList.svelte";
 import type CronPlugin from "../main";
-import { validateCronExpression } from "./cron-expression";
 import { createJobStore } from "../svelte/store.svelte";
 import { fileUrl } from "./vault-paths";
 
 /** Keys handled by getControlValue / setControlValue below. */
 type ControlKey =
-	| "defaultSchedule"
 	| "loginShellOverride"
 	| "extraPath"
 	| "logMaxBytes"
@@ -45,8 +43,6 @@ export class CronSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const settings = this.plugin.settings;
 		switch (key as ControlKey) {
-			case "defaultSchedule":
-				return settings.defaultSchedule;
 			case "loginShellOverride":
 				return settings.loginShellOverride ?? "";
 			case "extraPath":
@@ -63,9 +59,6 @@ export class CronSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const service = this.plugin.service;
 		switch (key as ControlKey) {
-			case "defaultSchedule":
-				await service.updateSettings({ defaultSchedule: String(value) });
-				return;
 			case "loginShellOverride": {
 				const shell = String(value).trim();
 				await service.updateSettings({ loginShellOverride: shell === "" ? null : shell });
@@ -101,25 +94,6 @@ export class CronSettingTab extends PluginSettingTab {
 						desc: "Every shell script in the cron folder, with the schedule it runs on.",
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
-					},
-				],
-			},
-			{
-				type: "group",
-				heading: "Defaults",
-				items: [
-					{
-						name: "Default schedule",
-						desc: "Given to newly discovered scripts. They stay disabled until you turn them on.",
-						control: {
-							type: "text",
-							key: "defaultSchedule" satisfies ControlKey,
-							defaultValue: "0 * * * *",
-							validate: (value: string) => {
-								const result = validateCronExpression(value);
-								return result.ok ? undefined : result.error;
-							},
-						},
 					},
 				],
 			},

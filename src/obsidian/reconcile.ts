@@ -1,3 +1,4 @@
+import { DEFAULT_SCHEDULE } from "./settings";
 import type { CronJob } from "./settings";
 
 export interface ReconcileResult {
@@ -6,10 +7,6 @@ export interface ReconcileResult {
 	nowMissing: CronJob[];
 	restored: CronJob[];
 	changed: boolean;
-}
-
-export interface ReconcileDefaults {
-	schedule: string;
 }
 
 /**
@@ -25,7 +22,6 @@ export interface ReconcileDefaults {
 export function reconcileJobs(
 	jobs: readonly CronJob[],
 	fileNames: readonly string[],
-	defaults: ReconcileDefaults,
 	newId: (fileName: string) => string
 ): ReconcileResult {
 	const present = new Set(fileNames);
@@ -65,7 +61,7 @@ export function reconcileJobs(
 			id: newId(fileName),
 			fileName,
 			name: defaultNameFor(fileName),
-			schedule: defaults.schedule,
+			schedule: DEFAULT_SCHEDULE,
 			enabled: false,
 			missing: false,
 		};

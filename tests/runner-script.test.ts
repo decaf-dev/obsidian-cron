@@ -134,15 +134,66 @@ describe("buildRunnerScript", () => {
 		expect((await first).code).toBe(0);
 	});
 
+	it("never lets two runs of the same job overlap", async () => {
+		await writeRunner();
+		// Every run that gets through appends a byte, so the file length is the
+		// number of runs that were not skipped.
+		const script = await job(
+			"race.sh",
+			'#!/bin/sh\nprintf x >> "$OBSIDIAN_VAULT_PATH/hits"\nsleep 1\n'
+		);
+
+		// Started together, so they contend for the lock rather than finding it
+		// already held: this is the window a two-step lock leaves open.
+		const results = await Promise.all(
+			Array.from({ length: 8 }, () => run(runner, ["race-1", script]))
+		);
+
+		expect(await fs.readFile(path.join(dir, "hits"), "utf8")).toBe("x");
+		expect(results.filter((result) => result.code === 0)).toHaveLength(1);
+		expect(results.filter((result) => result.code === 75)).toHaveLength(7);
+	});
+
+	it("publishes the holder's pid at the same moment as the lock", async () => {
+		await writeRunner();
+		const script = await job("held.sh", "#!/bin/sh\nsleep 1\n");
+		const lock = path.join(dir, "locks", "held-1.lock");
+
+		const running = run(runner, ["held-1", script]);
+		// Poll from the instant the lock appears: it must never be readable
+		// without a live pid in it, or a second run would call it stale.
+		for (let i = 0; i < 200; i++) {
+			const pid = await fs.readFile(lock, "utf8").catch(() => null);
+			if (pid !== null) {
+				expect(pid.trim()).toMatch(/^\d+$/);
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+
+		await running;
+		expect(await fs.readFile(lock, "utf8").catch(() => null)).toBeNull();
+	});
+
 	it("reclaims a stale lock left behind by a killed run", async () => {
 		await writeRunner();
 		const script = await job("ok.sh", "#!/bin/sh\necho ran\n");
-		const lock = path.join(dir, "locks", "stale-1.lock");
-		await fs.mkdir(lock, { recursive: true });
+		await fs.mkdir(path.join(dir, "locks"), { recursive: true });
 		// A pid that cannot be running, so kill -0 fails and the lock is stale.
-		await fs.writeFile(path.join(lock, "pid"), "999999\n");
+		await fs.writeFile(path.join(dir, "locks", "stale-1.lock"), "999999\n");
 
 		const result = await run(runner, ["stale-1", script]);
+		expect(result.code).toBe(0);
+	});
+
+	it("reclaims a lock directory left by an older version of the plugin", async () => {
+		await writeRunner();
+		const script = await job("ok.sh", "#!/bin/sh\necho ran\n");
+		const lock = path.join(dir, "locks", "legacy-1.lock");
+		await fs.mkdir(lock, { recursive: true });
+		await fs.writeFile(path.join(lock, "pid"), "999999\n");
+
+		const result = await run(runner, ["legacy-1", script]);
 		expect(result.code).toBe(0);
 	});
 

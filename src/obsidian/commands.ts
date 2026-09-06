@@ -2,8 +2,18 @@ import type { Plugin } from "obsidian";
 import type { CronJob } from "./settings";
 
 function commandId(job: CronJob): string {
-	// No plugin id prefix: addCommand and removeCommand both apply it.
+	// addCommand is documented to prefix the id with the plugin's own id.
 	return `run-${job.id}`;
+}
+
+/**
+ * Whether `removeCommand` applies the same prefix as `addCommand` is not
+ * documented, so both forms are removed. Removing an id that was never
+ * registered does nothing, which makes trying both safe on either behaviour.
+ */
+function removeCommand(plugin: Plugin, id: string): void {
+	plugin.removeCommand(id);
+	plugin.removeCommand(`${plugin.manifest.id}:${id}`);
 }
 
 function commandName(job: CronJob): string {
@@ -31,7 +41,7 @@ export function syncJobCommands(
 	for (const [id, name] of registered) {
 		const job = desired.get(id);
 		if (job === undefined || name !== commandName(job)) {
-			plugin.removeCommand(id);
+			removeCommand(plugin, id);
 			next.delete(id);
 		}
 	}
@@ -47,5 +57,5 @@ export function syncJobCommands(
 }
 
 export function removeJobCommands(plugin: Plugin, registered: ReadonlyMap<string, string>): void {
-	for (const [id] of registered) plugin.removeCommand(id);
+	for (const [id] of registered) removeCommand(plugin, id);
 }

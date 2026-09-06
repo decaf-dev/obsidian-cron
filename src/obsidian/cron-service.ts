@@ -61,6 +61,8 @@ export class CronService {
 	private crontabBin: string | null = null;
 	private crontabError: string | null = null;
 	private blockError: string | null = null;
+	private setupError: string | null = null;
+	private scanError: string | null = null;
 	private resolvedPath: string | null = null;
 	private loginShell = "/bin/sh";
 	private pathError: string | null = null;
@@ -70,6 +72,8 @@ export class CronService {
 	private commands: ReadonlyMap<string, string> = new Map();
 	/** Guards against rewriting the crontab when nothing cron cares about changed. */
 	private lastSignature: string | null = null;
+	/** Tail of the chain that serializes crontab read/modify/write cycles. */
+	private crontabQueue: Promise<unknown> = Promise.resolve();
 
 	readonly requestCrontabSync = debounce(() => void this.syncCrontab(), SYNC_DEBOUNCE_MS, true);
 
@@ -86,18 +90,26 @@ export class CronService {
 			return;
 		}
 
-		this.loginShell = detectLoginShell(this.plugin.settings.loginShellOverride);
-		this.crontabBin = await resolveCrontabBinary();
+		try {
+			this.loginShell = detectLoginShell(this.plugin.settings.loginShellOverride);
+			this.crontabBin = await resolveCrontabBinary();
 
-		await ensureCronFolders(this.paths);
-		await this.writeRunner();
-		await this.refreshFromDisk();
+			await ensureCronFolders(this.paths);
+			await this.writeRunner();
+			await this.refreshFromDisk();
 
-		this.stopWatching = watchCronFolder(this.paths, () => void this.refreshFromDisk());
+			this.stopWatching = watchCronFolder(this.paths, () => void this.refreshFromDisk());
 
-		// Sync once on load: this also heals a block left stale by a crash, or
-		// by settings edited while Obsidian was closed.
-		await this.syncCrontab({ force: true });
+			// Sync once on load: this also heals a block left stale by a crash, or
+			// by settings edited while Obsidian was closed.
+			await this.syncCrontab({ force: true });
+			this.setupError = null;
+		} catch (error) {
+			// A read-only vault or an unwritable runner must not leave the plugin
+			// half-started and silent: record it, and let polling retry.
+			this.setupError = message(error);
+		}
+		this.notify();
 		void this.probeLoginShellPath();
 	}
 
@@ -167,6 +179,20 @@ export class CronService {
 			loginShell: this.loginShell,
 			resolvedPath: this.resolvedPath,
 		});
+		if (this.scanError !== null) {
+			diagnostics.unshift({
+				level: "error",
+				message: "The cron folder could not be read, so the job list may be out of date.",
+				detail: this.scanError,
+			});
+		}
+		if (this.setupError !== null) {
+			diagnostics.unshift({
+				level: "error",
+				message: "This plugin could not finish starting up.",
+				detail: this.setupError,
+			});
+		}
 		if (this.blockError !== null) {
 			diagnostics.unshift({
 				level: "error",
@@ -187,7 +213,18 @@ export class CronService {
 	async refreshFromDisk(): Promise<void> {
 		if (this.paths === null) return;
 
-		this.scripts = await scanScripts(this.paths);
+		try {
+			this.scripts = await scanScripts(this.paths);
+			this.scanError = null;
+		} catch (error) {
+			// An unreadable folder is not an empty one. Reconciling against an
+			// empty list would mark every job missing and clear the crontab
+			// block, so a synced volume going quiet for a moment must not.
+			this.scanError = message(error);
+			this.notify();
+			return;
+		}
+
 		const result = reconcileJobs(
 			this.plugin.settings.jobs,
 			this.scripts.map((script) => script.fileName),
@@ -204,7 +241,11 @@ export class CronService {
 		await this.readStatuses();
 		this.notify();
 
-		if (result.changed) this.requestCrontabSync();
+		// Unconditional: a script gaining or losing its executable bit outside
+		// Obsidian changes what belongs in the crontab without changing the job
+		// list. The signature check in syncCrontab makes this free when nothing
+		// cron cares about actually moved.
+		this.requestCrontabSync();
 	}
 
 	startPolling(register: (id: number) => void): void {
@@ -223,6 +264,10 @@ export class CronService {
 					const parsed = { ranAt: Number(ranAt), exitCode: Number(exitCode) };
 					if (Number.isFinite(parsed.ranAt) && Number.isFinite(parsed.exitCode)) {
 						this.statuses.set(job.id, parsed);
+					} else {
+						// Truncated, or read while the runner was writing it.
+						// Showing the previous run's result would be a lie.
+						this.statuses.delete(job.id);
 					}
 				} catch {
 					this.statuses.delete(job.id);
@@ -245,6 +290,11 @@ export class CronService {
 		this.requestCrontabSync();
 	}
 
+	/**
+	 * Only meaningful for a job whose script is gone: while the file is still in
+	 * the cron folder, the next scan re-adds the job with a new id and the
+	 * default name and schedule, so the UI offers this on missing jobs only.
+	 */
 	async removeJob(id: string): Promise<void> {
 		this.plugin.settings.jobs = this.plugin.settings.jobs.filter((job) => job.id !== id);
 		await this.plugin.saveSettings();
@@ -262,8 +312,8 @@ export class CronService {
 			new Notice(`Could not make ${job.fileName} executable: ${message(error)}`);
 			return;
 		}
+		// refreshFromDisk syncs the crontab itself.
 		await this.refreshFromDisk();
-		this.requestCrontabSync();
 	}
 
 	async updateSettings(patch: Partial<CronSettings>): Promise<void> {
@@ -304,11 +354,13 @@ export class CronService {
 
 		try {
 			// Identical arguments to the crontab line, so a manual run and a
-			// scheduled run cannot diverge.
+			// scheduled run cannot diverge. Its own process group, so a run that
+			// overruns the timeout is stopped along with the script it started
+			// rather than being left behind holding the job's lock.
 			const result = await run(
 				this.paths.runner,
 				[job.id, getScriptPath(this.paths, job.fileName)],
-				{ timeoutMs: 10 * 60_000 }
+				{ timeoutMs: 10 * 60_000, ownProcessGroup: true }
 			);
 			if (result.code === 75) {
 				new Notice(`${job.name} is already running.`);
@@ -376,7 +428,21 @@ export class CronService {
 		return JSON.stringify(entries.map((e) => [e.jobId, e.schedule, e.command]));
 	}
 
-	async syncCrontab(options: { force?: boolean } = {}): Promise<void> {
+	/**
+	 * `crontab -` replaces the whole file, so two overlapping read/modify/write
+	 * cycles can drop each other's changes. Every cycle goes through here.
+	 */
+	private enqueueCrontabWork<T>(work: () => Promise<T>): Promise<T> {
+		const result = this.crontabQueue.then(work, work);
+		this.crontabQueue = result.catch(() => undefined);
+		return result;
+	}
+
+	syncCrontab(options: { force?: boolean } = {}): Promise<void> {
+		return this.enqueueCrontabWork(() => this.performCrontabSync(options));
+	}
+
+	private async performCrontabSync(options: { force?: boolean }): Promise<void> {
 		if (this.paths === null || this.crontabBin === null) return;
 
 		const entries = this.buildEntries();
@@ -440,17 +506,29 @@ export class CronService {
 	}
 
 	async removeAllManagedJobs(): Promise<void> {
-		if (this.crontabBin === null) return;
-		try {
-			const current = await readCrontab(this.crontabBin);
-			const next = spliceManagedBlock(current.text, null);
-			if (next !== current.text) await writeCrontab(this.crontabBin, next, current.existed);
-			this.lastSignature = null;
-			this.blockError = null;
-			new Notice("Removed this plugin's block from your crontab.");
-		} catch (error) {
-			new Notice(message(error));
+		const bin = this.crontabBin;
+		if (bin === null) return;
+
+		// Disable first. Leaving the jobs enabled would have the next sync — a
+		// rename, a settings change, a new script — rebuild the whole block.
+		const jobs = this.plugin.settings.jobs;
+		if (jobs.some((job) => job.enabled)) {
+			this.plugin.settings.jobs = jobs.map((job) => ({ ...job, enabled: false }));
+			await this.plugin.saveSettings();
 		}
+
+		await this.enqueueCrontabWork(async () => {
+			try {
+				const current = await readCrontab(bin);
+				const next = spliceManagedBlock(current.text, null);
+				if (next !== current.text) await writeCrontab(bin, next, current.existed);
+				this.lastSignature = null;
+				this.blockError = null;
+				new Notice("Removed this plugin's block from your crontab, and turned every job off.");
+			} catch (error) {
+				new Notice(message(error));
+			}
+		});
 		this.notify();
 	}
 

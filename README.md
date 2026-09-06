@@ -36,7 +36,7 @@ Everything this plugin writes lives inside a delimited block:
 
 Lines outside that block are never touched. If the block is ever damaged — say the `# END` line gets deleted — the plugin refuses to write anything at all and tells you, rather than guessing where the block ends.
 
-To remove the block yourself at any time, use **Remove all managed jobs now** in the settings.
+To remove the block yourself at any time, use **Remove all managed jobs now** in the settings. That also turns every job off, so the block does not come back the next time something changes.
 
 ### Writing a script
 

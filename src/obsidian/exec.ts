@@ -20,19 +20,33 @@ export interface RunOptions {
 	cwd?: string;
 	env?: NodeJS.ProcessEnv;
 	timeoutMs?: number;
+	/**
+	 * Run the child in its own process group so a timeout can signal the whole
+	 * tree. Without it, killing a wrapper leaves the processes it spawned
+	 * running, detached from anything that could clean up after them.
+	 */
+	ownProcessGroup?: boolean;
 }
+
+/** How long a timed-out child gets to handle SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 5_000;
 
 /**
  * Runs a binary with an argument array — never a shell string, so nothing in a
  * path or filename can be interpreted as a command.
  */
 export function run(bin: string, args: readonly string[], options: RunOptions = {}): Promise<RunResult> {
-	const { input, cwd, env, timeoutMs = 30_000 } = options;
+	const { input, cwd, env, timeoutMs = 30_000, ownProcessGroup = false } = options;
 
 	return new Promise((resolve, reject) => {
 		let child;
 		try {
-			child = spawn(bin, [...args], { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+			child = spawn(bin, [...args], {
+				cwd,
+				env,
+				detached: ownProcessGroup,
+				stdio: ["pipe", "pipe", "pipe"],
+			});
 		} catch (error) {
 			reject(new CommandNotFoundError(bin, error));
 			return;
@@ -41,11 +55,31 @@ export function run(bin: string, args: readonly string[], options: RunOptions = 
 		let stdout = "";
 		let stderr = "";
 		let settled = false;
+		let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const signal = (name: NodeJS.Signals) => {
+			try {
+				// A negative pid addresses the process group, so a wrapper's
+				// children are signalled too rather than being orphaned.
+				if (ownProcessGroup && child.pid !== undefined) process.kill(-child.pid, name);
+				else child.kill(name);
+			} catch {
+				// Already gone.
+			}
+		};
+
+		const stopTimers = () => {
+			clearTimeout(timer);
+			if (killTimer !== null) clearTimeout(killTimer);
+		};
 
 		const timer = setTimeout(() => {
 			if (settled) return;
 			settled = true;
-			child.kill("SIGKILL");
+			// SIGTERM first: the runner traps it to release its lock, which
+			// SIGKILL would leave behind for the next run to trip over.
+			signal("SIGTERM");
+			killTimer = setTimeout(() => signal("SIGKILL"), KILL_GRACE_MS);
 			reject(new Error(`"${bin}" did not finish within ${timeoutMs}ms`));
 		}, timeoutMs);
 
@@ -55,16 +89,18 @@ export function run(bin: string, args: readonly string[], options: RunOptions = 
 		child.stderr.on("data", (chunk: string) => (stderr += chunk));
 
 		child.on("error", (error) => {
+			stopTimers();
 			if (settled) return;
 			settled = true;
-			clearTimeout(timer);
 			reject(new CommandNotFoundError(bin, error));
 		});
 
 		child.on("close", (code) => {
+			// Unconditional: a child that dies to SIGTERM after the timeout has
+			// already settled the promise, but its SIGKILL is now pointless.
+			stopTimers();
 			if (settled) return;
 			settled = true;
-			clearTimeout(timer);
 			resolve({ code: code ?? 0, stdout, stderr });
 		});
 

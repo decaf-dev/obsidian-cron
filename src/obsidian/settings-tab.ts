@@ -171,7 +171,7 @@ export class CronSettingTab extends PluginSettingTab {
 					},
 					{
 						name: "Remove all managed jobs now",
-						desc: "Clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
+						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
 						action: () => void service.removeAllManagedJobs(),
 					},
 					{

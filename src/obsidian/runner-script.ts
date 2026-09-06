@@ -57,17 +57,48 @@ LOG="$LOGS/$JOB_ID.log"
 LOCK="$LOCKS/$JOB_ID.lock"
 STATUS_FILE="$LOGS/$JOB_ID.status"
 
-# mkdir is atomic on every POSIX filesystem; flock does not exist on macOS.
+# Locking, without flock, which does not exist on macOS.
+#
+# The pid is written to a private file and that file is then hard-linked into
+# place: ln fails when the target exists, so exactly one run can take the lock,
+# and the lock is never observable without its pid. Creating the lock first and
+# filling in the pid afterwards would leave a window in which a second run sees
+# an empty lock, calls it stale, and runs concurrently.
+#
 # Exit 75 (EX_TEMPFAIL) means "skipped, already running", not a job failure.
-if ! mkdir "$LOCK" 2>/dev/null; then
-	if [ -f "$LOCK/pid" ] && kill -0 "$(cat "$LOCK/pid")" 2>/dev/null; then
+CLAIM="$LOCKS/$JOB_ID.$$.claim"
+trap 'rm -f "$CLAIM"' EXIT INT TERM HUP
+printf '%s\\n' "$$" > "$CLAIM" || exit 1
+
+# mkdir is the fallback for filesystems with no hard links (FAT/exFAT), where
+# it is still atomic but cannot publish the lock and the pid in one step.
+take_lock() {
+	ln "$CLAIM" "$LOCK" 2>/dev/null && return 0
+	[ -e "$LOCK" ] && return 1
+	mkdir "$LOCK" 2>/dev/null
+}
+
+if ! take_lock; then
+	HOLDER=$(cat "$LOCK" 2>/dev/null)
+	if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
 		exit 75
 	fi
-	rm -rf "$LOCK"
-	mkdir "$LOCK" 2>/dev/null || exit 75
+
+	# The holder is gone. Renaming the stale lock aside is itself atomic, so of
+	# several runs that all saw it, only one wins the right to clear it.
+	STALE="$LOCK.stale.$$"
+	mv "$LOCK" "$STALE" 2>/dev/null || exit 75
+	if [ "$(cat "$STALE" 2>/dev/null)" != "$HOLDER" ]; then
+		# A live run replaced the lock between the read and the rename. Put it
+		# back, unless something has taken the lock again in the meantime.
+		ln "$STALE" "$LOCK" 2>/dev/null
+		rm -rf "$STALE"
+		exit 75
+	fi
+	rm -rf "$STALE"
+	take_lock || exit 75
 fi
-printf '%s\\n' "$$" > "$LOCK/pid"
-trap 'rm -rf "$LOCK"' EXIT INT TERM HUP
+trap 'rm -rf "$LOCK" "$CLAIM"' EXIT INT TERM HUP
 
 # Keep the log from growing without bound inside the vault.
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt "$MAXBYTES" ]; then

@@ -47,9 +47,17 @@ export default class CronPlugin extends Plugin {
 		this.addSettingTab(new CronSettingTab(this.app, this));
 
 		this.app.workspace.onLayoutReady(() => {
-			void this.service.initialize().then(() => {
-				this.service.startPolling((id) => this.registerInterval(id));
-			});
+			// initialize records its own failures as diagnostics; the catch is
+			// here so an unforeseen one still cannot stop polling, which is what
+			// recovers the plugin once the underlying problem goes away.
+			void this.service
+				.initialize()
+				.catch((error: unknown) => {
+					new Notice(`Cron could not start: ${error instanceof Error ? error.message : String(error)}`);
+				})
+				.finally(() => {
+					this.service.startPolling((id) => this.registerInterval(id));
+				});
 		});
 	}
 

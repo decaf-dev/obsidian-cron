@@ -29,14 +29,13 @@ function isCandidate(fileName: string): boolean {
  *
  * Node `fs` rather than the vault adapter, because the adapter's `stat` has no
  * mode bits and it cannot chmod — both of which this plugin needs.
+ *
+ * Throws when the folder itself cannot be read. Returning an empty list would
+ * be indistinguishable from a folder with no scripts in it, and callers treat
+ * that as "every job's script has vanished".
  */
 export async function scanScripts(paths: CronPaths): Promise<ScriptInfo[]> {
-	let entries: nodeFs.Dirent[];
-	try {
-		entries = await fs.readdir(paths.folder, { withFileTypes: true });
-	} catch {
-		return [];
-	}
+	const entries: nodeFs.Dirent[] = await fs.readdir(paths.folder, { withFileTypes: true });
 
 	const scripts: ScriptInfo[] = [];
 	for (const entry of entries) {

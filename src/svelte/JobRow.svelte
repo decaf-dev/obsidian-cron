@@ -15,6 +15,16 @@
 	const errors = $derived(view.diagnostics.filter((d) => d.level === "error"));
 	const warnings = $derived(view.diagnostics.filter((d) => d.level === "warning"));
 	const canEnable = $derived(!blocked && errors.length === 0);
+	// A job that develops a problem after it was turned on must still be
+	// switchable off, so the guard covers turning one on and nothing else.
+	const toggleDisabled = $derived(!job.enabled && !canEnable);
+	const toggleTitle = $derived(
+		toggleDisabled
+			? "Fix the problems below first"
+			: job.enabled
+				? "Stop scheduling this job"
+				: "Schedule this job"
+	);
 
 	function onRename(event: Event) {
 		const name = (event.currentTarget as HTMLInputElement).value.trim();
@@ -43,11 +53,11 @@
 		/>
 
 		<div class="cron-job-actions">
-			<label class="cron-toggle" title={canEnable ? "Schedule this job" : "Fix the problems below first"}>
+			<label class="cron-toggle" title={toggleTitle}>
 				<input
 					type="checkbox"
 					checked={job.enabled}
-					disabled={!canEnable}
+					disabled={toggleDisabled}
 					onchange={(e) =>
 						void service.updateJob(job.id, {
 							enabled: (e.currentTarget as HTMLInputElement).checked,
@@ -66,13 +76,18 @@
 
 			<button type="button" onclick={() => void service.openLog(job.id)}>Log</button>
 
-			<button
-				type="button"
-				class="cron-remove"
-				aria-label="Remove job"
-				title="Remove this job. The script itself is left alone."
-				onclick={() => void service.removeJob(job.id)}>Remove</button
-			>
+			{#if job.missing}
+				<!-- Only offered for a script that is gone: while the file is
+				     still there, the next scan would re-add the job from scratch
+				     and lose its name and schedule. -->
+				<button
+					type="button"
+					class="cron-remove"
+					aria-label="Remove job"
+					title="Forget this job. Its script is no longer in the cron folder."
+					onclick={() => void service.removeJob(job.id)}>Remove</button
+				>
+			{/if}
 		</div>
 	</div>
 

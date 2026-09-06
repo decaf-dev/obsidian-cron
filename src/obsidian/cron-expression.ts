@@ -200,3 +200,27 @@ function describeDayOfWeek(dow: string): string | null {
 function pad(value: string): string {
 	return value.padStart(2, "0");
 }
+
+export interface SchedulePreset {
+	label: string;
+	expression: string;
+}
+
+/** The schedules offered in the settings dropdown, in the order shown. */
+export const SCHEDULE_PRESETS: readonly SchedulePreset[] = [
+	{ label: "Every 10 minutes", expression: "*/10 * * * *" },
+	{ label: "Every 30 minutes", expression: "*/30 * * * *" },
+	{ label: "Every hour", expression: "0 * * * *" },
+	{ label: "Every day at midnight", expression: "0 0 * * *" },
+];
+
+/**
+ * The preset a schedule corresponds to, or null when it needs the custom
+ * field. Matching is done on the normalized form, so extra whitespace in a
+ * hand-written expression still resolves to its preset.
+ */
+export function matchSchedulePreset(expression: string): SchedulePreset | null {
+	const validation = validateCronExpression(expression);
+	if (!validation.ok) return null;
+	return SCHEDULE_PRESETS.find((preset) => preset.expression === validation.normalized) ?? null;
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+	SCHEDULE_PRESETS,
 	describeCronExpression,
+	matchSchedulePreset,
 	validateCronExpression,
 } from "../src/obsidian/cron-expression";
 
@@ -80,5 +82,23 @@ describe("describeCronExpression", () => {
 	it("returns nothing rather than guessing", () => {
 		expect(describeCronExpression("0 9 1,15 * *")).toBe("");
 		expect(describeCronExpression("nonsense")).toBe("");
+	});
+});
+
+describe("matchSchedulePreset", () => {
+	it("matches every preset it offers", () => {
+		for (const preset of SCHEDULE_PRESETS) {
+			expect(matchSchedulePreset(preset.expression)).toBe(preset);
+		}
+	});
+
+	it("matches through normalization", () => {
+		expect(matchSchedulePreset("  0   *  *  *  * ")?.label).toBe("Every hour");
+	});
+
+	it("returns null for a schedule needing the custom field", () => {
+		expect(matchSchedulePreset("*/7 * * * *")).toBeNull();
+		expect(matchSchedulePreset("@daily")).toBeNull();
+		expect(matchSchedulePreset("nonsense")).toBeNull();
 	});
 });

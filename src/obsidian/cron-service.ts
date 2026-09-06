@@ -251,6 +251,27 @@ export class CronService {
 		this.requestCrontabSync();
 	}
 
+	/**
+	 * A rescan the user asked for, which reports what it found. The watch and
+	 * polling paths call `refreshFromDisk` directly so they stay silent.
+	 */
+	async rescan(): Promise<void> {
+		if (this.paths === null) {
+			new Notice("Cron is unavailable for this vault.");
+			return;
+		}
+
+		await this.refreshFromDisk();
+
+		if (this.scanError !== null) {
+			new Notice(`Could not read the cron folder: ${this.scanError}`);
+			return;
+		}
+
+		const count = this.scripts.length;
+		new Notice(count === 1 ? "Rescanned: 1 script found." : `Rescanned: ${count} scripts found.`);
+	}
+
 	startPolling(register: (id: number) => void): void {
 		// fs.watch can go silent on synced or network volumes, so poll as well.
 		register(window.setInterval(() => void this.refreshFromDisk(), POLL_INTERVAL_MS));

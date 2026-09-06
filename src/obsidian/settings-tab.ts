@@ -95,6 +95,17 @@ export class CronSettingTab extends PluginSettingTab {
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
 					},
+					{
+						name: "Rescan cron folder",
+						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Rescan")
+									.onClick(() => void service.rescan())
+							);
+						},
+					},
 				],
 			},
 			{

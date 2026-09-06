@@ -32,10 +32,6 @@
 			<JobRow {view} {service} blocked={store.blocked} />
 		{/each}
 	{/if}
-
-	<div class="cron-list-footer">
-		<button type="button" onclick={() => void service.refreshFromDisk()}>Rescan folder</button>
-	</div>
 </div>
 
 <style>
@@ -65,10 +61,5 @@
 	.cron-empty code {
 		font-size: var(--font-ui-smaller);
 		overflow-wrap: anywhere;
-	}
-
-	.cron-list-footer {
-		display: flex;
-		justify-content: flex-end;
 	}
 </style>

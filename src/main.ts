@@ -28,7 +28,7 @@ export default class CronPlugin extends Plugin {
 		this.addCommand({
 			id: "rescan-scripts",
 			name: "Rescan script folder",
-			callback: () => void this.service.refreshFromDisk(),
+			callback: () => void this.service.rescan(),
 		});
 
 		this.addCommand({

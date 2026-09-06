@@ -1,8 +1,8 @@
 import { PluginSettingTab } from "obsidian";
 import type { App, Setting, SettingDefinitionItem } from "obsidian";
 import { mount, unmount } from "svelte";
-import DiagnosticsPanel from "../svelte/DiagnosticsPanel.svelte";
 import JobList from "../svelte/JobList.svelte";
+import PathList from "../svelte/PathList.svelte";
 import type CronPlugin from "../main";
 import { validateCronExpression } from "./cron-expression";
 import { createJobStore } from "../svelte/store.svelte";
@@ -146,6 +146,13 @@ export class CronSettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: "Effective PATH",
+						desc: "Where a scheduled job looks for the commands it runs, in order.",
+						searchable: false,
+						render: (setting: Setting) =>
+							mountUnderDesc(setting, PathList, { store: this.getStore() }),
+					},
+					{
 						name: "Log size limit",
 						desc: "Kilobytes to keep per job. A log past this size is trimmed to half of it before the next run.",
 						control: {
@@ -198,17 +205,6 @@ export class CronSettingTab extends PluginSettingTab {
 					},
 				],
 			},
-			{
-				type: "group",
-				heading: "Diagnostics",
-				items: [
-					{
-						name: "Status",
-						searchable: false,
-						render: (setting: Setting) => mountInto(setting, DiagnosticsPanel, { store: this.getStore() }),
-					},
-				],
-			},
 		];
 	}
 }
@@ -227,7 +223,28 @@ function mountInto<Props extends Record<string, unknown>>(
 ): () => void {
 	setting.settingEl.empty();
 	setting.settingEl.addClass("cron-svelte-host");
-	const view = mount(component, { target: setting.settingEl, props });
+	return mountAt(setting.settingEl, component, props);
+}
+
+/**
+ * Hosts a Svelte component under a setting row's description, keeping the
+ * row's own name, description and layout above it. For content too wide to
+ * sit in the control column.
+ */
+function mountUnderDesc<Props extends Record<string, unknown>>(
+	setting: Setting,
+	component: Parameters<typeof mount<Props, Record<string, unknown>>>[0],
+	props: Props
+): () => void {
+	return mountAt(setting.descEl.createDiv(), component, props);
+}
+
+function mountAt<Props extends Record<string, unknown>>(
+	target: HTMLElement,
+	component: Parameters<typeof mount<Props, Record<string, unknown>>>[0],
+	props: Props
+): () => void {
+	const view = mount(component, { target, props });
 	return () => {
 		void unmount(view);
 	};

@@ -167,6 +167,11 @@ export class CronService {
 		});
 	}
 
+	/** PATH a scheduled job runs with, or null until the login shell is probed. */
+	getResolvedPath(): string | null {
+		return this.resolvedPath;
+	}
+
 	getDiagnostics(): Diagnostic[] {
 		if (this.pathError !== null) {
 			return [{ level: "error", message: this.pathError }];
@@ -177,7 +182,6 @@ export class CronService {
 			vaultPath: this.paths?.vault ?? null,
 			crontabError: this.crontabError,
 			loginShell: this.loginShell,
-			resolvedPath: this.resolvedPath,
 		});
 		if (this.scanError !== null) {
 			diagnostics.unshift({

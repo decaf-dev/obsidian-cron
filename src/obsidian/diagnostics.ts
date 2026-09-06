@@ -5,7 +5,7 @@ import { UnquotableValueError, shellSingleQuote } from "./shell-quote";
 import type { CronJob } from "./settings";
 import type { ScriptInfo } from "./script-scanner";
 
-export type DiagnosticLevel = "error" | "warning" | "info";
+export type DiagnosticLevel = "error" | "warning";
 
 /** A fix the settings UI can offer as a button. */
 export type DiagnosticFix = "make-executable";
@@ -25,8 +25,6 @@ export interface EnvironmentStatus {
 	/** Verbatim stderr from a failed crontab read, when there was one. */
 	crontabError: string | null;
 	loginShell: string;
-	/** PATH as reported by the login shell, once probed. */
-	resolvedPath: string | null;
 }
 
 /**
@@ -96,14 +94,6 @@ export function getEnvironmentDiagnostics(status: EnvironmentStatus): Diagnostic
 				"is inherited by every job in every crontab, not just this plugin's, and Full Disk Access also " +
 				"covers Mail, Messages, Safari data and Time Machine backups.\n\n" +
 				"Running a job from the command palette works either way, because it inherits Obsidian's own permissions.",
-		});
-	}
-
-	if (status.resolvedPath !== null) {
-		diagnostics.push({
-			level: "info",
-			message: "PATH your scheduled jobs will see",
-			detail: status.resolvedPath,
 		});
 	}
 

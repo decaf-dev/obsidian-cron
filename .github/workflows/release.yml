@@ -37,4 +37,3 @@ jobs:
                   files: |
                       dist/main.js
                       dist/manifest.json
-                      dist/styles.css

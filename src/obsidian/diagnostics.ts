@@ -1,5 +1,3 @@
-import os from "node:os";
-import path from "node:path";
 import { validateCronExpression } from "./cron-expression";
 import { UnquotableValueError, shellSingleQuote } from "./shell-quote";
 import type { CronJob } from "./settings";
@@ -25,23 +23,6 @@ export interface EnvironmentStatus {
 	/** Verbatim stderr from a failed crontab read, when there was one. */
 	crontabError: string | null;
 	loginShell: string;
-}
-
-/**
- * macOS restricts these directories under TCC. `/usr/sbin/cron` needs Full Disk
- * Access to touch anything inside them, and the failure is silent, so a vault
- * living here is worth warning about up front.
- */
-const PROTECTED_DIRECTORIES = ["Documents", "Desktop", "Downloads"];
-
-function isTccProtected(vaultPath: string): boolean {
-	const home = os.homedir();
-	const relative = path.relative(home, vaultPath);
-	if (relative.startsWith("..") || path.isAbsolute(relative)) {
-		return vaultPath.includes("Library/Mobile Documents");
-	}
-	const [first] = relative.split(path.sep);
-	return PROTECTED_DIRECTORIES.includes(first) || vaultPath.includes("Library/Mobile Documents");
 }
 
 export function getEnvironmentDiagnostics(status: EnvironmentStatus): Diagnostic[] {
@@ -78,22 +59,6 @@ export function getEnvironmentDiagnostics(status: EnvironmentStatus): Diagnostic
 			level: "error",
 			message: "The crontab command refused to run.",
 			detail: status.crontabError,
-		});
-	}
-
-	if (status.platform === "darwin" && isTccProtected(status.vaultPath)) {
-		diagnostics.push({
-			level: "warning",
-			message: "This vault is in a folder macOS protects, so scheduled jobs will fail silently.",
-			detail:
-				"macOS blocks cron from reaching ~/Desktop, ~/Documents, ~/Downloads and iCloud Drive. " +
-				"The fix that changes least is to move this vault somewhere unprotected, such as ~/Vaults, " +
-				"after which no permission is needed at all.\n\n" +
-				"The alternative is to grant Full Disk Access to cron: System Settings > Privacy & Security > " +
-				"Full Disk Access > + > press Cmd-Shift-G > enter /usr/sbin/cron. Weigh that carefully. The grant " +
-				"is inherited by every job in every crontab, not just this plugin's, and Full Disk Access also " +
-				"covers Mail, Messages, Safari data and Time Machine backups.\n\n" +
-				"Running a job from the command palette works either way, because it inherits Obsidian's own permissions.",
 		});
 	}
 

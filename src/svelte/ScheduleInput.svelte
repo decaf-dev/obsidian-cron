@@ -5,12 +5,14 @@
 	} from "../obsidian/cron-expression";
 
 	interface Props {
+		/** Ties the field to the caller's visible label. */
+		id: string;
 		value: string;
 		disabled?: boolean;
 		onCommit: (schedule: string) => void;
 	}
 
-	let { value, disabled = false, onCommit }: Props = $props();
+	let { id, value, disabled = false, onCommit }: Props = $props();
 
 	// While editing, the field holds a local draft so an invalid intermediate
 	// value never reaches the service, and therefore never reaches the crontab.
@@ -44,12 +46,12 @@
 
 <div class="cron-schedule">
 	<input
+		{id}
 		type="text"
 		class="cron-schedule-input"
 		class:cron-invalid={!validation.ok}
 		spellcheck="false"
 		placeholder="0 3 * * *"
-		aria-label="Cron schedule"
 		value={shown}
 		{disabled}
 		oninput={onInput}
@@ -64,10 +66,11 @@
 </div>
 
 <style>
+	/* Matches the gap the surrounding field uses between control and note. */
 	.cron-schedule {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 4px;
 		min-width: 0;
 	}
 

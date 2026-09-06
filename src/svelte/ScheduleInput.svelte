@@ -68,37 +68,18 @@
 </script>
 
 <div class="cron-schedule">
-	<div class="cron-schedule-select-wrap">
-		<select
-			{id}
-			class="dropdown cron-schedule-select"
-			{disabled}
-			value={isCustom ? CUSTOM : preset?.expression}
-			onchange={onSelect}
-		>
-			{#each SCHEDULE_PRESETS as option (option.expression)}
-				<option value={option.expression}>{option.label}</option>
-			{/each}
-			<option value={CUSTOM}>Custom</option>
-		</select>
-
-		<svg
-			class="cron-schedule-arrow"
-			xmlns="http://www.w3.org/2000/svg"
-			width="14"
-			height="14"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			stroke-width="2"
-			stroke-linecap="round"
-			stroke-linejoin="round"
-			aria-hidden="true"
-		>
-			<path d="m7 15 5 5 5-5" />
-			<path d="m7 9 5-5 5 5" />
-		</svg>
-	</div>
+	<select
+		{id}
+		class="dropdown cron-schedule-select"
+		{disabled}
+		value={isCustom ? CUSTOM : preset?.expression}
+		onchange={onSelect}
+	>
+		{#each SCHEDULE_PRESETS as option (option.expression)}
+			<option value={option.expression}>{option.label}</option>
+		{/each}
+		<option value={CUSTOM}>Custom</option>
+	</select>
 
 	{#if isCustom}
 		<input
@@ -131,37 +112,18 @@
 		min-width: 0;
 	}
 
-	.cron-schedule-select-wrap {
-		position: relative;
-		display: flex;
-		min-width: 0;
-	}
-
 	/*
-	 * Obsidian's .dropdown is kept for its theme colours, border and height, so
-	 * the control still matches the custom input stacked beneath it. Everything
-	 * about the label's placement is taken over here: a natively rendered
-	 * select ignores text-align outright, which is what left the label pinned
-	 * to the right edge. Turning the appearance off makes alignment work, at
-	 * the cost of having to draw the arrow ourselves.
+	 * On macOS, Obsidian right-aligns dropdown labels inside the settings
+	 * modal (.mod-macos:not(.is-mobile) .mod-settings sets
+	 * --dropdown-text-align: end), which suits the narrow control column of an
+	 * ordinary setting row but leaves this full-width field's label stranded
+	 * away from the custom input stacked beneath it. .dropdown resolves its
+	 * text-align through that variable, so redeclaring it here is the whole
+	 * fix: a value set on the element beats the one inherited from the modal.
 	 */
-	.cron-schedule-select-wrap .cron-schedule-select {
+	.cron-schedule-select {
 		width: 100%;
-		appearance: none;
-		-webkit-appearance: none;
-		text-align: left;
-		text-align-last: left;
-		padding-right: 28px;
-		background-image: none;
-	}
-
-	.cron-schedule-arrow {
-		position: absolute;
-		right: 8px;
-		top: 50%;
-		transform: translateY(-50%);
-		color: var(--text-muted);
-		pointer-events: none;
+		--dropdown-text-align: start;
 	}
 
 	.cron-schedule-input {

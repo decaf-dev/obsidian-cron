@@ -389,14 +389,30 @@ export class CronService {
 		this.requestCrontabSync();
 	}
 
-	async makeJobExecutable(id: string): Promise<void> {
-		const job = this.findJob(id);
-		if (job === undefined || this.paths === null) return;
-		try {
-			await makeExecutable(this.paths, job.fileName);
-		} catch (error) {
-			new Notice(`Could not make ${job.fileName} executable: ${message(error)}`);
-			return;
+	/**
+	 * Sets the executable bit on every script whose diagnostic asks for it.
+	 *
+	 * One script that refuses to chmod does not stop the rest: the failures are
+	 * reported together and keep their diagnostic, so the banner offering this
+	 * comes back for them alone.
+	 */
+	async grantExecutePermissions(): Promise<void> {
+		if (this.paths === null) return;
+		const jobs = this.getViews()
+			.filter((view) => view.diagnostics.some((d) => d.fix === "make-executable"))
+			.map((view) => view.job);
+		if (jobs.length === 0) return;
+
+		const failures: string[] = [];
+		for (const job of jobs) {
+			try {
+				await makeExecutable(this.paths, job.fileName);
+			} catch (error) {
+				failures.push(`${job.fileName}: ${message(error)}`);
+			}
+		}
+		if (failures.length > 0) {
+			new Notice(`Could not make these scripts executable:\n${failures.join("\n")}`);
 		}
 		// refreshFromDisk syncs the crontab itself.
 		await this.refreshFromDisk();

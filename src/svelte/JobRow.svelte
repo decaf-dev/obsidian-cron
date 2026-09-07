@@ -123,11 +123,6 @@
 	{#each errors as diagnostic (diagnostic.message)}
 		<div class="cron-diagnostic cron-error">
 			<span>{diagnostic.message}</span>
-			{#if diagnostic.fix === "make-executable"}
-				<button type="button" onclick={() => void service.makeJobExecutable(job.id)}>
-					Make executable
-				</button>
-			{/if}
 			{#if diagnostic.detail}<div class="cron-detail">{diagnostic.detail}</div>{/if}
 		</div>
 	{/each}

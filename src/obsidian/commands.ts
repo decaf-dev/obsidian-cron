@@ -26,12 +26,20 @@ function commandName(job: CronJob): string {
  *
  * The registered name is tracked because Obsidian caches the resolved name:
  * a renamed job needs its command removed and re-added, not overwritten.
+ *
+ * `resequence` drops every registration first and adds them back in `jobs`
+ * order. Reordering the list changes no name, so the diff below would leave
+ * the commands registered in their old order. It is opt-in because the diff
+ * runs on every disk refresh, where re-registering everything would be waste.
+ * Registration order is only a nudge either way: the palette applies its own
+ * recency and fuzzy ranking on top.
  */
 export function syncJobCommands(
 	plugin: Plugin,
 	jobs: readonly CronJob[],
 	registered: ReadonlyMap<string, string>,
-	onRun: (jobId: string) => void
+	onRun: (jobId: string) => void,
+	options: { resequence?: boolean } = {}
 ): Map<string, string> {
 	const next = new Map(registered);
 
@@ -40,7 +48,7 @@ export function syncJobCommands(
 
 	for (const [id, name] of registered) {
 		const job = desired.get(id);
-		if (job === undefined || name !== commandName(job)) {
+		if (options.resequence === true || job === undefined || name !== commandName(job)) {
 			removeCommand(plugin, id);
 			next.delete(id);
 		}

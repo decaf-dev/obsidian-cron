@@ -21,6 +21,7 @@ import type { Diagnostic } from "./diagnostics";
 import { createIgnoreRules } from "./ignore-rules";
 import type { IgnoreRules } from "./ignore-rules";
 import { makeJobId, reconcileJobs } from "./reconcile";
+import { moveJob as movedJobList } from "./reorder";
 import { detectLoginShell, ensureRunnerScript } from "./runner-script";
 import { run } from "./exec";
 import {
@@ -375,6 +376,29 @@ export class CronService {
 	}
 
 	/**
+	 * Moves a job to another position in the list.
+	 *
+	 * The order is the array order, so this is the whole feature: the settings
+	 * write persists it and `reconcileJobs` preserves it on every later scan.
+	 * The crontab block follows, because `buildEntries` walks the same array —
+	 * cron does not care about line order, but a block that reads like the
+	 * settings pane does.
+	 *
+	 * The commands are resequenced rather than diffed, since a reorder changes
+	 * no name and the diff would therefore register nothing.
+	 */
+	async moveJob(id: string, toIndex: number): Promise<void> {
+		const jobs = movedJobList(this.plugin.settings.jobs, id, toIndex);
+		if (jobs === null) return;
+
+		this.plugin.settings.jobs = jobs;
+		await this.persistSettings();
+		this.syncCommands({ resequence: true });
+		this.notify();
+		this.requestCrontabSync();
+	}
+
+	/**
 	 * Only meaningful for a job the scan cannot see: while the file is still
 	 * visible to the scan, the next one re-adds the job with a new id and the
 	 * default name and schedule. A script that is gone is removed by
@@ -636,12 +660,13 @@ export class CronService {
 
 	// --- helpers -----------------------------------------------------------
 
-	private syncCommands(): void {
+	private syncCommands(options: { resequence?: boolean } = {}): void {
 		this.commands = syncJobCommands(
 			this.plugin,
 			this.plugin.settings.jobs,
 			this.commands,
-			(jobId) => void this.runNow(jobId)
+			(jobId) => void this.runNow(jobId),
+			options
 		);
 	}
 

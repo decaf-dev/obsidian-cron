@@ -4,7 +4,8 @@ import type { CronJob } from "./settings";
 export interface ReconcileResult {
 	jobs: CronJob[];
 	added: CronJob[];
-	nowMissing: CronJob[];
+	/** Jobs dropped because their script is gone from the cron folder. */
+	removed: CronJob[];
 	restored: CronJob[];
 	/** Jobs re-pointed at the same script under a new path. */
 	moved: CronJob[];
@@ -15,19 +16,26 @@ export interface ReconcileResult {
  * Reconciles saved jobs against the scripts currently on disk.
  *
  * Three rules matter here. A script with no job gets one, always disabled, so
- * nothing is ever scheduled without the user opting in. A job whose script has
- * vanished is marked missing but *keeps* its `enabled` value, so a file that is
- * moved away and back returns with its schedule intact. And a script that has
- * simply moved is followed rather than treated as one deletion and one
- * discovery, which would otherwise throw away the name and schedule the user
- * gave it.
+ * nothing is ever scheduled without the user opting in. A job whose script is
+ * gone is dropped, so the list only ever describes scripts that exist. And a
+ * script that has simply moved is followed rather than treated as one deletion
+ * and one discovery, which would otherwise throw away the name and schedule the
+ * user gave it — the re-link pass runs first for exactly that reason.
  *
- * `newId` is injected so this stays pure and testable.
+ * `isIgnored` is what keeps the deletion rule honest. A scan leaves out both
+ * the scripts that are gone and the scripts the ignore settings exclude, and
+ * only the first kind is actually missing. Deleting the second would mean
+ * adding a folder to the ignore list silently destroyed the names and schedules
+ * of everything inside it, and taking it back out would return bare defaults.
+ * So an ignored job is kept and marked missing, as before.
+ *
+ * `newId` and `isIgnored` are injected so this stays pure and testable.
  */
 export function reconcileJobs(
 	jobs: readonly CronJob[],
 	filePaths: readonly string[],
-	newId: (fileName: string) => string
+	newId: (fileName: string) => string,
+	isIgnored: (fileName: string) => boolean = () => false
 ): ReconcileResult {
 	const present = new Set(filePaths);
 	let changed = false;
@@ -46,7 +54,7 @@ export function reconcileJobs(
 	}
 
 	// A job whose path is gone might have moved rather than been deleted, so
-	// nothing is written off as missing until the re-link pass has had a look.
+	// nothing is deleted until the re-link pass has had a look.
 	const orphansByName = new Map<string, CronJob[]>();
 	for (const job of kept) {
 		if (present.has(job.fileName)) continue;
@@ -72,7 +80,7 @@ export function reconcileJobs(
 	}
 
 	const next: CronJob[] = [];
-	const nowMissing: CronJob[] = [];
+	const removed: CronJob[] = [];
 	const restored: CronJob[] = [];
 	const moved: CronJob[] = [];
 
@@ -89,6 +97,15 @@ export function reconcileJobs(
 		}
 
 		const missing = !present.has(job.fileName);
+		if (missing && !isIgnored(job.fileName)) {
+			// The script is not on disk and nothing is hiding it, so the job
+			// describes a file that no longer exists. Its crontab line goes with
+			// it, because the caller syncs from this list.
+			removed.push(job);
+			changed = true;
+			continue;
+		}
+
 		if (missing === job.missing) {
 			next.push(job);
 			continue;
@@ -97,8 +114,7 @@ export function reconcileJobs(
 		const updated: CronJob = { ...job, missing };
 		next.push(updated);
 		changed = true;
-		if (missing) nowMissing.push(updated);
-		else restored.push(updated);
+		if (!missing) restored.push(updated);
 	}
 
 	const added: CronJob[] = [];
@@ -118,7 +134,7 @@ export function reconcileJobs(
 		changed = true;
 	}
 
-	return { jobs: next, added, nowMissing, restored, moved, changed };
+	return { jobs: next, added, removed, restored, moved, changed };
 }
 
 function push<T>(map: Map<string, T[]>, key: string, value: T): void {

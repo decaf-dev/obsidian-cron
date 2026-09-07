@@ -104,13 +104,15 @@
 				<button type="button" onclick={() => void service.openLog(job.id)}>Log</button>
 
 				{#if job.missing}
-					<!-- Only offered for a script that is gone: while the file is
-					     still there, the next scan would re-add the job from scratch
-					     and lose its name and schedule. -->
+					<!-- Only offered for a script the scan cannot see. A script that
+					     is gone is removed by the next rescan on its own, so this is
+					     here for the ignored one: still on disk, so it would come
+					     back from scratch otherwise, and only the user can say
+					     whether the job should go with it. -->
 					<button
 						type="button"
 						class="cron-remove"
-						title="Forget this job. Its script is no longer in the cron folder."
+						title="Forget this job. Its script is not in the cron folder's scan."
 						onclick={() => void service.removeJob(job.id)}>Remove</button
 					>
 				{/if}

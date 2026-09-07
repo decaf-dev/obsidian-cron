@@ -73,12 +73,7 @@
 	}
 </script>
 
-<div
-	bind:this={card}
-	class="cron-job"
-	class:cron-job-inactive={!view.scheduled}
-	class:cron-job-dragging={dragging}
->
+<div bind:this={card} class="cron-job" class:cron-job-dragging={dragging}>
 	<button
 		type="button"
 		class="cron-grip"
@@ -151,17 +146,29 @@
 			</div>
 
 			<div class="cron-job-controls">
+				<!-- Obsidian's own toggle, hand-rolled rather than mounted through
+				     ToggleComponent: the classes are all its stylesheet needs, and
+				     a real checkbox keeps the keyboard and label behaviour the API
+				     would otherwise have to re-implement. The label has to wrap the
+				     switch, because the input inside it is transparent and covers
+				     only the left edge. -->
 				<label class="cron-toggle" title={toggleTitle}>
-					<input
-						type="checkbox"
-						checked={job.enabled}
-						disabled={toggleDisabled}
-						onchange={(e) =>
-							void service.updateJob(job.id, {
-								enabled: (e.currentTarget as HTMLInputElement).checked,
-							})}
-					/>
-					<span>Enabled</span>
+					<span
+						class="checkbox-container"
+						class:is-enabled={job.enabled}
+						class:is-disabled={toggleDisabled}
+					>
+						<input
+							type="checkbox"
+							aria-label="Enabled"
+							checked={job.enabled}
+							disabled={toggleDisabled}
+							onchange={(e) =>
+								void service.updateJob(job.id, {
+									enabled: (e.currentTarget as HTMLInputElement).checked,
+								})}
+						/>
+					</span>
 				</label>
 
 				<div class="cron-job-buttons">
@@ -214,6 +221,7 @@
 	.cron-job {
 		border: 1px solid var(--background-modifier-border);
 		border-radius: var(--radius-m);
+		background: var(--background-secondary);
 		padding: 16px;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
@@ -225,10 +233,6 @@
 		flex-direction: column;
 		gap: 10px;
 		min-width: 0;
-	}
-
-	.cron-job-inactive {
-		background: var(--background-primary-alt);
 	}
 
 	/* The card being dragged is dimmed rather than hidden: taking it out of
@@ -341,9 +345,13 @@
 	.cron-toggle {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		font-size: var(--font-ui-small);
-		white-space: nowrap;
+	}
+
+	/* Focus lands on the transparent checkbox, so the ring it would draw is
+	   invisible. Obsidian puts the same outline on the switch itself, which is
+	   the part that can actually be seen. */
+	.cron-toggle .checkbox-container:has(input:focus-visible) {
+		outline: var(--toggle-s-border-width) solid var(--background-modifier-border-focus);
 	}
 
 	.cron-remove {

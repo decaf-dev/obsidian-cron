@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-cron",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Schedule cron jobs on your machine from inside Obsidian",
 	"main": "main.js",
 	"scripts": {

@@ -307,12 +307,17 @@
 	}
 
 	/* The fields and the action bar are separate concerns, so a rule divides
-	   them rather than relying on whitespace alone. */
+	   them rather than relying on whitespace alone. The rule sits closer to the
+	   footer than to the fields above it, so it reads as the footer's own top
+	   edge instead of floating between the two halves. The extra space above is
+	   a margin rather than a wider body gap, which would push the diagnostics
+	   off the footer by the same amount. */
 	.cron-job-footer {
 		display: flex;
 		flex-direction: column;
 		gap: 12px;
-		padding-top: 18px;
+		margin-top: 10px;
+		padding-top: 10px;
 		border-top: 1px solid var(--background-modifier-border);
 	}
 

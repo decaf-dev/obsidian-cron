@@ -103,7 +103,7 @@ export function getJobDiagnostics(
 		diagnostics.push({
 			level: "error",
 			message: "Script not found in the cron folder.",
-			detail: `Put ${job.fileName} back, or remove this job. Its schedule is kept in the meantime.`,
+			detail: `Put ${job.fileName} back to schedule it again. A rescan removes this job once its script is gone.`,
 		});
 		return diagnostics;
 	}

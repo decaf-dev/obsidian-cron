@@ -36,17 +36,45 @@ describe("reconcileJobs", () => {
 		expect(result.jobs[0]).toBe(existing[0]);
 	});
 
-	it("marks a vanished script missing but keeps the user's intent", () => {
+	it("deletes a job whose script has vanished", () => {
 		const result = reconcileJobs(
 			[job({ fileName: "backup.sh", enabled: true, schedule: "*/5 * * * *" })],
 			[],
 			ids
 		);
-		expect(result.nowMissing).toHaveLength(1);
+		expect(result.removed).toHaveLength(1);
+		expect(result.removed[0]).toMatchObject({ fileName: "backup.sh" });
+		expect(result.jobs).toHaveLength(0);
+		expect(result.changed).toBe(true);
+	});
+
+	it("keeps a job whose script is only excluded by the ignore settings", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "lib/backup.sh", enabled: true, schedule: "*/5 * * * *" })],
+			[],
+			ids,
+			(fileName) => fileName === "lib/backup.sh"
+		);
+		expect(result.removed).toHaveLength(0);
 		expect(result.jobs[0]).toMatchObject({
 			missing: true,
 			enabled: true,
 			schedule: "*/5 * * * *",
+		});
+	});
+
+	it("restores an un-ignored job with its name and schedule intact", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "lib/backup.sh", name: "Nightly", missing: true, enabled: true })],
+			["lib/backup.sh"],
+			ids
+		);
+		expect(result.added).toHaveLength(0);
+		expect(result.jobs[0]).toMatchObject({
+			name: "Nightly",
+			missing: false,
+			enabled: true,
+			schedule: "0 3 * * *",
 		});
 	});
 
@@ -60,9 +88,9 @@ describe("reconcileJobs", () => {
 		expect(result.jobs[0]).toMatchObject({ missing: false, enabled: true });
 	});
 
-	it("never deletes a job entry on its own", () => {
-		const result = reconcileJobs([job({ fileName: "gone.sh" })], [], ids);
-		expect(result.jobs).toHaveLength(1);
+	it("deletes rather than parks a job when the folder still reads fine", () => {
+		const result = reconcileJobs([job({ fileName: "gone.sh" })], ["other.sh"], ids);
+		expect(result.jobs.map((entry) => entry.fileName)).toEqual(["other.sh"]);
 	});
 
 	it("preserves a customized name and id across reconciliation", () => {
@@ -91,7 +119,7 @@ describe("reconcileJobs following a moved script", () => {
 		expect(result.jobs).toHaveLength(1);
 		expect(result.moved).toHaveLength(1);
 		expect(result.added).toHaveLength(0);
-		expect(result.nowMissing).toHaveLength(0);
+		expect(result.removed).toHaveLength(0);
 		expect(result.jobs[0]).toMatchObject({
 			id: existing[0].id,
 			fileName: "archive/backup.sh",
@@ -129,7 +157,7 @@ describe("reconcileJobs following a moved script", () => {
 			ids
 		);
 		expect(result.moved).toHaveLength(0);
-		expect(result.nowMissing).toHaveLength(2);
+		expect(result.removed).toHaveLength(2);
 		expect(result.added).toHaveLength(1);
 	});
 
@@ -140,14 +168,14 @@ describe("reconcileJobs following a moved script", () => {
 			ids
 		);
 		expect(result.moved).toHaveLength(0);
-		expect(result.nowMissing).toHaveLength(1);
+		expect(result.removed).toHaveLength(1);
 		expect(result.added).toHaveLength(2);
 	});
 
 	it("does not follow a rename within the same folder", () => {
 		const result = reconcileJobs([job({ fileName: "backup.sh" })], ["archive.sh"], ids);
 		expect(result.moved).toHaveLength(0);
-		expect(result.nowMissing).toHaveLength(1);
+		expect(result.removed).toHaveLength(1);
 		expect(result.added).toHaveLength(1);
 	});
 
@@ -158,13 +186,29 @@ describe("reconcileJobs following a moved script", () => {
 			ids
 		);
 		expect(result.moved).toHaveLength(0);
-		expect(result.nowMissing).toHaveLength(1);
+		expect(result.removed).toHaveLength(1);
 	});
 
-	it("still marks a deleted script missing", () => {
+	it("deletes a script that was replaced by an unrelated one", () => {
 		const result = reconcileJobs([job({ fileName: "backup.sh" })], ["unrelated.sh"], ids);
 		expect(result.moved).toHaveLength(0);
-		expect(result.jobs[0].missing).toBe(true);
+		expect(result.removed).toHaveLength(1);
+		expect(result.jobs.map((entry) => entry.fileName)).toEqual(["unrelated.sh"]);
+	});
+
+	it("follows a move rather than deleting and rediscovering", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "backup.sh", name: "Nightly", enabled: true })],
+			["archive/backup.sh"],
+			ids
+		);
+		expect(result.removed).toHaveLength(0);
+		expect(result.added).toHaveLength(0);
+		expect(result.jobs[0]).toMatchObject({
+			fileName: "archive/backup.sh",
+			name: "Nightly",
+			enabled: true,
+		});
 	});
 
 	it("re-links after duplicate entries are dropped, not before", () => {

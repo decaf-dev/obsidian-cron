@@ -249,13 +249,14 @@ export class CronService {
 	async refreshFromDisk(): Promise<void> {
 		if (this.paths === null) return;
 
+		const rules = this.ignoreRules();
 		try {
-			this.scripts = await scanScripts(this.paths, this.ignoreRules());
+			this.scripts = await scanScripts(this.paths, rules);
 			this.scanError = null;
 		} catch (error) {
 			// An unreadable folder is not an empty one. Reconciling against an
-			// empty list would mark every job missing and clear the crontab
-			// block, so a synced volume going quiet for a moment must not.
+			// empty list would delete every job and clear the crontab block, so a
+			// synced volume going quiet for a moment must not.
 			this.scanError = message(error);
 			this.notify();
 			return;
@@ -264,7 +265,8 @@ export class CronService {
 		const result = reconcileJobs(
 			this.plugin.settings.jobs,
 			this.scripts.map((script) => script.fileName),
-			(fileName) => makeJobId(fileName, randomSuffix)
+			(fileName) => makeJobId(fileName, randomSuffix),
+			(fileName) => rules.ignoresPath(fileName)
 		);
 
 		if (result.changed) {
@@ -273,13 +275,20 @@ export class CronService {
 		}
 
 		// This path is otherwise silent, because the watch and the poll both
-		// come through it. A move is the exception: it changes what an enabled
-		// job runs, and nothing else on screen would say so.
+		// come through it. Moves and deletions are the exceptions: both change
+		// what is scheduled, and nothing else on screen would say so — a deleted
+		// job's row simply stops being there.
 		if (result.moved.length === 1) {
 			const [job] = result.moved;
 			new Notice(`${job.name} now runs ${job.fileName}.`);
 		} else if (result.moved.length > 1) {
 			new Notice(`${result.moved.length} jobs followed their scripts to a new folder.`);
+		}
+		if (result.removed.length === 1) {
+			const [job] = result.removed;
+			new Notice(`${job.name} was removed: ${job.fileName} is no longer in the cron folder.`);
+		} else if (result.removed.length > 1) {
+			new Notice(`${result.removed.length} jobs were removed: their scripts are gone.`);
 		}
 
 		this.syncCommands();
@@ -366,9 +375,11 @@ export class CronService {
 	}
 
 	/**
-	 * Only meaningful for a job whose script is gone: while the file is still in
-	 * the cron folder, the next scan re-adds the job with a new id and the
-	 * default name and schedule, so the UI offers this on missing jobs only.
+	 * Only meaningful for a job the scan cannot see: while the file is still
+	 * visible to the scan, the next one re-adds the job with a new id and the
+	 * default name and schedule. A script that is gone is removed by
+	 * reconciliation without asking, so in practice this is the ignored case —
+	 * a job the user wants gone for good rather than parked.
 	 */
 	async removeJob(id: string): Promise<void> {
 		this.plugin.settings.jobs = this.plugin.settings.jobs.filter((job) => job.id !== id);

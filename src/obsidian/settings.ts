@@ -18,7 +18,12 @@ export interface CronJob {
 	 * actually scheduled is derived — see `isSchedulable`.
 	 */
 	enabled: boolean;
-	/** The script is not currently on disk. */
+	/**
+	 * The script is not in the scan's results. Reconciliation deletes a job
+	 * whose script is genuinely gone, so after a scan this means the ignore
+	 * settings are excluding a file that is still on disk. It can also be true
+	 * for a job read from `data.json` before the first scan has run.
+	 */
 	missing: boolean;
 }
 

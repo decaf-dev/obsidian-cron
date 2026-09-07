@@ -160,6 +160,7 @@
 					>
 						<input
 							type="checkbox"
+							aria-label="Enabled"
 							checked={job.enabled}
 							disabled={toggleDisabled}
 							onchange={(e) =>
@@ -168,7 +169,6 @@
 								})}
 						/>
 					</span>
-					<span>Enabled</span>
 				</label>
 
 				<div class="cron-job-buttons">
@@ -345,9 +345,6 @@
 	.cron-toggle {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-		font-size: var(--font-ui-small);
-		white-space: nowrap;
 	}
 
 	/* Focus lands on the transparent checkbox, so the ring it would draw is

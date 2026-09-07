@@ -221,7 +221,7 @@
 	.cron-job {
 		border: 1px solid var(--background-modifier-border);
 		border-radius: var(--radius-m);
-		background: var(--background-primary-alt);
+		background: var(--background-secondary);
 		padding: 16px;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);

@@ -94,13 +94,34 @@ export class CronSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: "group",
-				heading: "Jobs",
+				heading: "Scripts",
+				// The cards carry their own borders, so the group's panel is
+				// stripped back to nothing in JobList's stylesheet. The class is
+				// the only handle it has on this group.
+				cls: "cron-scripts-group",
 				items: [
 					{
-						name: "Scheduled scripts",
+						name: "Scripts",
 						desc: "Every shell script in the cron folder, with the schedule it runs on.",
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Scanning",
+				items: [
+					{
+						name: "Rescan cron folder",
+						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Rescan")
+									.onClick(() => void service.rescan())
+							);
+						},
 					},
 					{
 						name: "Ignored folders",
@@ -120,17 +141,6 @@ export class CronSettingTab extends PluginSettingTab {
 							key: "ignoredFiles" satisfies ControlKey,
 							defaultValue: "",
 							validate: rejectParentSegments,
-						},
-					},
-					{
-						name: "Rescan cron folder",
-						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
-						render: (setting: Setting) => {
-							setting.addButton((button) =>
-								button
-									.setButtonText("Rescan")
-									.onClick(() => void service.rescan())
-							);
 						},
 					},
 				],
@@ -177,20 +187,8 @@ export class CronSettingTab extends PluginSettingTab {
 			},
 			{
 				type: "group",
-				heading: "Crontab",
+				heading: "Maintenance",
 				items: [
-					{
-						name: "Remove all managed jobs now",
-						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
-						render: (setting: Setting) => {
-							setting.addButton((button) =>
-								button
-									.setButtonText("Remove all")
-									.setDestructive()
-									.onClick(() => void service.removeAllManagedJobs())
-							);
-						},
-					},
 					{
 						name: "Open cron folder",
 						desc: service.getPaths()?.folder ?? "Unavailable for this vault.",
@@ -203,6 +201,18 @@ export class CronSettingTab extends PluginSettingTab {
 										const paths = service.getPaths();
 										if (paths !== null) window.open(fileUrl(paths.folder));
 									})
+							);
+						},
+					},
+					{
+						name: "Remove all managed jobs",
+						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Remove all")
+									.setDestructive()
+									.onClick(() => void service.removeAllManagedJobs())
 							);
 						},
 					},

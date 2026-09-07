@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { flip } from "svelte/animate";
 	import type { CronService } from "../obsidian/cron-service";
 	import DiagnosticsPanel from "./DiagnosticsPanel.svelte";
 	import ExecutableBanner from "./ExecutableBanner.svelte";
@@ -12,6 +13,41 @@
 
 	let { service, store }: Props = $props();
 	const folder = $derived(service.getPaths()?.folder ?? null);
+
+	// Drag state is local, and the service is called once on drop. Same shape as
+	// ScheduleInput's draft: a half-finished gesture never reaches settings.
+	let draggingId = $state<string | null>(null);
+	let overIndex = $state<number | null>(null);
+	const fromIndex = $derived(store.views.findIndex((view) => view.job.id === draggingId));
+
+	/**
+	 * Which side of the hovered card the drop line goes on.
+	 *
+	 * `moveJob` inserts at the target index *after* lifting the job out, so a
+	 * card dragged downwards lands below the one it is over and a card dragged
+	 * upwards lands above it. Drawing the line on one fixed side would promise
+	 * the wrong position for half the drags.
+	 */
+	function lineSide(index: number): "above" | "below" | null {
+		if (draggingId === null || overIndex !== index || fromIndex === -1) return null;
+		if (fromIndex > index) return "above";
+		if (fromIndex < index) return "below";
+		return null;
+	}
+
+	function move(id: string, toIndex: number) {
+		void service.moveJob(id, toIndex);
+	}
+
+	function drop() {
+		if (draggingId !== null && overIndex !== null) move(draggingId, overIndex);
+		release();
+	}
+
+	function release() {
+		draggingId = null;
+		overIndex = null;
+	}
 </script>
 
 <div class="cron-job-list">
@@ -30,9 +66,44 @@
 			{/if}
 		</div>
 	{:else}
-		{#each store.views as view (view.job.id)}
-			<JobRow {view} {service} blocked={store.blocked} />
-		{/each}
+		<div class="cron-jobs" role="list">
+			{#each store.views as view, index (view.job.id)}
+				<!-- The slot is the drop target, not the card: it also covers the
+				     gap above the card, so there is no dead strip between rows. -->
+				<div
+					class="cron-job-slot"
+					role="listitem"
+					animate:flip={{ duration: 180 }}
+					ondragover={(event) => {
+						// The drop never fires without this.
+						event.preventDefault();
+						overIndex = index;
+					}}
+					ondrop={(event) => {
+						event.preventDefault();
+						drop();
+					}}
+				>
+					{#if lineSide(index) === "above"}
+						<div class="cron-drop-line cron-drop-line-above"></div>
+					{/if}
+					<JobRow
+						{view}
+						{service}
+						{index}
+						blocked={store.blocked}
+						count={store.views.length}
+						dragging={draggingId === view.job.id}
+						onGrab={() => (draggingId = view.job.id)}
+						onRelease={release}
+						onMove={(toIndex) => move(view.job.id, toIndex)}
+					/>
+					{#if lineSide(index) === "below"}
+						<div class="cron-drop-line cron-drop-line-below"></div>
+					{/if}
+				</div>
+			{/each}
+		</div>
 	{/if}
 </div>
 
@@ -42,6 +113,38 @@
 		flex-direction: column;
 		gap: 10px;
 		width: 100%;
+	}
+
+	.cron-jobs {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	/* The slot exists so the drop line can sit above its card without the
+	   flex gap opening up around it. */
+	.cron-job-slot {
+		position: relative;
+	}
+
+	/* Centred in the 10px gap between cards, so it reads as belonging to
+	   neither and pointing at the space the card will drop into. */
+	.cron-drop-line {
+		position: absolute;
+		left: 0;
+		right: 0;
+		height: 2px;
+		border-radius: 1px;
+		background: var(--text-accent);
+		pointer-events: none;
+	}
+
+	.cron-drop-line-above {
+		top: -6px;
+	}
+
+	.cron-drop-line-below {
+		bottom: -6px;
 	}
 
 	.cron-empty {

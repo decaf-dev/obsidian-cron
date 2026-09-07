@@ -35,6 +35,12 @@ Each job has:
 
 Every job also gets a **Run script: \<name\>** command in the command palette, so you can run it immediately instead of waiting for its schedule. A manual run goes through the same runner as a scheduled one, so the two behave identically.
 
+### Ordering the list
+
+Jobs are listed in the order you put them in. Drag a job by the handle on the left of its card, or focus the handle and use the arrow keys, and the list stays that way — the order lives in the plugin's `data.json` and comes back the next time you open Obsidian. A newly discovered script is added at the **bottom**, so an arrangement you have already made never shifts underneath you.
+
+The order is cosmetic as far as cron is concerned, but the plugin follows it everywhere. Moving an **enabled** job rewrites the managed block so its lines read in the same order as the settings pane; lines outside the block are still never touched. The **Run script** commands are re-registered in the new order too, though the command palette applies its own recency and fuzzy ranking on top of that.
+
 ### Folders
 
 Subfolders are scanned up to eight levels deep. A few things are skipped:

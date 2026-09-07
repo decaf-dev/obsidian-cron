@@ -18,6 +18,8 @@ import {
 import { removeJobCommands, syncJobCommands } from "./commands";
 import { getEnvironmentDiagnostics, getJobDiagnostics, isSchedulable } from "./diagnostics";
 import type { Diagnostic } from "./diagnostics";
+import { createIgnoreRules } from "./ignore-rules";
+import type { IgnoreRules } from "./ignore-rules";
 import { makeJobId, reconcileJobs } from "./reconcile";
 import { detectLoginShell, ensureRunnerScript } from "./runner-script";
 import { run } from "./exec";
@@ -30,6 +32,7 @@ import {
 import type { ScriptInfo, StopWatching } from "./script-scanner";
 import { shellSingleQuote } from "./shell-quote";
 import { validateCronExpression } from "./cron-expression";
+import { isSafeScriptPath } from "./settings";
 import type { CronJob, CronSettings } from "./settings";
 import type CronPlugin from "../main";
 import { fileUrl, getCronPaths, getLogPath, getScriptPath, getStatusPath } from "./vault-paths";
@@ -78,6 +81,16 @@ export class CronService {
 	readonly requestCrontabSync = debounce(() => void this.syncCrontab(), SYNC_DEBOUNCE_MS, true);
 
 	constructor(private readonly plugin: CronPlugin) {}
+
+	/**
+	 * The ignore lists as a matcher. Rebuilt per use rather than cached: the
+	 * lists are a handful of strings, and a stale copy would quietly disagree
+	 * with what the scan just did.
+	 */
+	private ignoreRules(): IgnoreRules {
+		const settings = this.plugin.settings;
+		return createIgnoreRules(settings.ignoredFolders, settings.ignoredFiles);
+	}
 
 	// --- lifecycle ---------------------------------------------------------
 
@@ -154,13 +167,15 @@ export class CronService {
 
 	getViews(): JobView[] {
 		const byName = new Map(this.scripts.map((script) => [script.fileName, script]));
+		const rules = this.ignoreRules();
 		return this.plugin.settings.jobs.map((job) => {
 			const script = byName.get(job.fileName);
+			const ignored = script === undefined && rules.ignoresPath(job.fileName);
 			return {
 				job,
 				script,
-				diagnostics: getJobDiagnostics(job, script),
-				scheduled: isSchedulable(job, script),
+				diagnostics: getJobDiagnostics(job, script, ignored),
+				scheduled: isSchedulable(job, script, ignored),
 				status: this.statuses.get(job.id) ?? null,
 				running: this.running.has(job.id),
 			};
@@ -218,7 +233,7 @@ export class CronService {
 		if (this.paths === null) return;
 
 		try {
-			this.scripts = await scanScripts(this.paths);
+			this.scripts = await scanScripts(this.paths, this.ignoreRules());
 			this.scanError = null;
 		} catch (error) {
 			// An unreadable folder is not an empty one. Reconciling against an
@@ -238,6 +253,16 @@ export class CronService {
 		if (result.changed) {
 			this.plugin.settings.jobs = result.jobs;
 			await this.plugin.saveSettings();
+		}
+
+		// This path is otherwise silent, because the watch and the poll both
+		// come through it. A move is the exception: it changes what an enabled
+		// job runs, and nothing else on screen would say so.
+		if (result.moved.length === 1) {
+			const [job] = result.moved;
+			new Notice(`${job.name} now runs ${job.fileName}.`);
+		} else if (result.moved.length > 1) {
+			new Notice(`${result.moved.length} jobs followed their scripts to a new folder.`);
 		}
 
 		this.syncCommands();
@@ -361,6 +386,13 @@ export class CronService {
 		if ("loginShellOverride" in patch || "extraPath" in patch || "logMaxBytes" in patch) {
 			await this.writeRunner();
 		}
+		if ("ignoredFolders" in patch || "ignoredFiles" in patch) {
+			// The lists decide what the scan finds, so the job list is stale the
+			// moment either changes. refreshFromDisk notifies and requests the
+			// crontab sync itself; the pair below is debounced and
+			// signature-guarded, so repeating them costs nothing.
+			await this.refreshFromDisk();
+		}
 		this.notify();
 		this.requestCrontabSync();
 	}
@@ -371,6 +403,12 @@ export class CronService {
 		const job = this.findJob(id);
 		if (job === undefined || this.paths === null) return;
 
+		if (!isSafeScriptPath(job.fileName)) {
+			// Reconciliation marks such a job missing, so this is only reachable
+			// from a data.json written by hand or by whatever syncs the vault.
+			new Notice(`${job.name}: its script path is not inside the cron folder.`);
+			return;
+		}
 		if (job.missing) {
 			new Notice(`${job.name}: script not found in the cron folder.`);
 			return;
@@ -429,10 +467,13 @@ export class CronService {
 		if (this.paths === null) return [];
 		const paths = this.paths;
 		const byName = new Map(this.scripts.map((script) => [script.fileName, script]));
+		const rules = this.ignoreRules();
 
 		const entries: ManagedEntry[] = [];
 		for (const job of this.plugin.settings.jobs) {
-			if (!isSchedulable(job, byName.get(job.fileName))) continue;
+			const script = byName.get(job.fileName);
+			const ignored = script === undefined && rules.ignoresPath(job.fileName);
+			if (!isSchedulable(job, script, ignored)) continue;
 			const validation = validateCronExpression(job.schedule);
 			if (!validation.ok) continue;
 

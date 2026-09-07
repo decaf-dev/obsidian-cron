@@ -1,10 +1,12 @@
 import fs from "node:fs/promises";
 import nodeFs from "node:fs";
 import path from "node:path";
+import type { IgnoreRules } from "./ignore-rules";
 import { LOCKS_DIR_NAME, LOGS_DIR_NAME, RUNNER_FILE_NAME } from "./settings";
 import type { CronPaths } from "./vault-paths";
 
 export interface ScriptInfo {
+	/** Path relative to the cron folder, `/`-separated. */
 	fileName: string;
 	/** Any of the execute bits are set. */
 	executable: boolean;
@@ -12,55 +14,209 @@ export interface ScriptInfo {
 	hasShebang: boolean;
 }
 
+/**
+ * How far below the cron folder the scan goes.
+ *
+ * A guard against a pathological tree rather than a considered limit; nobody
+ * organises a handful of shell scripts eight folders deep.
+ */
+const MAX_DEPTH = 8;
+
 export async function ensureCronFolders(paths: CronPaths): Promise<void> {
 	await fs.mkdir(paths.folder, { recursive: true });
 	await fs.mkdir(paths.logs, { recursive: true });
 	await fs.mkdir(paths.locks, { recursive: true });
 }
 
-function isCandidate(fileName: string): boolean {
-	if (fileName === RUNNER_FILE_NAME) return false;
+function isScriptName(fileName: string): boolean {
 	if (fileName.startsWith(".")) return false;
 	return fileName.toLowerCase().endsWith(".sh");
 }
 
+/** The plugin's own files, which only ever sit at the top level. */
+function isReserved(name: string): boolean {
+	return name === LOGS_DIR_NAME || name === LOCKS_DIR_NAME || name === RUNNER_FILE_NAME;
+}
+
 /**
- * Lists the user's scripts.
+ * Lists the user's scripts, including the ones in subfolders.
  *
  * Node `fs` rather than the vault adapter, because the adapter's `stat` has no
- * mode bits and it cannot chmod — both of which this plugin needs.
+ * mode bits and it cannot chmod — both of which this plugin needs. And a
+ * hand-written walk rather than a recursive `readdir`, because an ignored
+ * folder has to prune the subtree rather than be filtered out afterwards.
  *
- * Throws when the folder itself cannot be read. Returning an empty list would
- * be indistinguishable from a folder with no scripts in it, and callers treat
- * that as "every job's script has vanished".
+ * Throws when a folder cannot be read. Returning a short list would be
+ * indistinguishable from scripts having been deleted, and callers act on that
+ * by taking jobs out of the crontab.
  */
-export async function scanScripts(paths: CronPaths): Promise<ScriptInfo[]> {
-	const entries: nodeFs.Dirent[] = await fs.readdir(paths.folder, { withFileTypes: true });
-
+export async function scanScripts(paths: CronPaths, rules: IgnoreRules): Promise<ScriptInfo[]> {
 	const scripts: ScriptInfo[] = [];
-	for (const entry of entries) {
-		if (entry.name === LOGS_DIR_NAME || entry.name === LOCKS_DIR_NAME) continue;
-		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
-		if (!isCandidate(entry.name)) continue;
+	// The chain starts at the root's real path so a symlink pointing back at
+	// the cron folder is recognised as the cycle it is.
+	let root: string;
+	try {
+		root = await fs.realpath(paths.folder);
+	} catch {
+		root = paths.folder;
+	}
+	await walk(paths.folder, "", 0, rules, scripts, [root]);
+	scripts.sort(byFolderThenName);
+	return scripts;
+}
 
-		const fullPath = path.join(paths.folder, entry.name);
-		let executable = false;
-		let hasShebang = false;
-		try {
-			const stat = await fs.stat(fullPath);
-			if (!stat.isFile()) continue;
-			executable = (stat.mode & 0o111) !== 0;
-			hasShebang = await startsWithShebang(fullPath);
-		} catch {
-			// A broken symlink or a file removed mid-scan: skip it and let the
-			// next scan pick up whatever is actually there.
-			continue;
-		}
-		scripts.push({ fileName: entry.name, executable, hasShebang });
+async function walk(
+	root: string,
+	relativeDir: string,
+	depth: number,
+	rules: IgnoreRules,
+	out: ScriptInfo[],
+	ancestors: readonly string[]
+): Promise<void> {
+	const absoluteDir = relativeDir === "" ? root : path.join(root, relativeDir);
+
+	let entries: nodeFs.Dirent[];
+	try {
+		entries = await fs.readdir(absoluteDir, { withFileTypes: true });
+	} catch (error) {
+		// A folder deleted while the scan was walking it is not a failure; the
+		// next scan sees whatever is actually there.
+		if (isNotFound(error)) return;
+		throw new Error(readFailure(relativeDir, error));
 	}
 
-	scripts.sort((a, b) => a.fileName.localeCompare(b.fileName));
-	return scripts;
+	for (const entry of entries) {
+		if (relativeDir === "" && isReserved(entry.name)) continue;
+		if (entry.name.startsWith(".")) continue;
+
+		const relative = relativeDir === "" ? entry.name : `${relativeDir}/${entry.name}`;
+		const absolute = path.join(absoluteDir, entry.name);
+
+		if (entry.isDirectory()) {
+			// A real directory inside a real directory: its real path follows
+			// from its parent's, with no syscall needed to ask.
+			await descend(root, relative, depth, rules, out, ancestors, {
+				real: `${ancestors[ancestors.length - 1]}/${entry.name}`,
+			});
+			continue;
+		}
+
+		if (entry.isSymbolicLink()) {
+			// readdir reports the link itself, so what it points at decides
+			// whether this is a folder to walk or a script to record.
+			let target: nodeFs.Stats;
+			try {
+				target = await fs.stat(absolute);
+			} catch {
+				// A broken symlink: skip it.
+				continue;
+			}
+			if (target.isDirectory()) {
+				await descend(root, relative, depth, rules, out, ancestors, { link: absolute });
+				continue;
+			}
+			if (!target.isFile()) continue;
+			if (!isScriptName(entry.name)) continue;
+			if (rules.ignoresFile(relative)) continue;
+			await record(absolute, relative, target, out);
+			continue;
+		}
+
+		if (!entry.isFile()) continue;
+		if (!isScriptName(entry.name)) continue;
+		if (rules.ignoresFile(relative)) continue;
+
+		try {
+			const stat = await fs.stat(absolute);
+			if (!stat.isFile()) continue;
+			await record(absolute, relative, stat, out);
+		} catch {
+			// Removed mid-scan: skip it and let the next scan pick up whatever
+			// is actually there.
+			continue;
+		}
+	}
+}
+
+/**
+ * Walks one subfolder, unless it is ignored, too deep, or a way back to a
+ * folder already on the path to it.
+ *
+ * `ancestors` holds the real path of every folder from the cron folder down to
+ * this one. Comparing against that, rather than against every folder the scan
+ * has ever seen, is what tells a cycle apart from a shortcut: a link back to an
+ * ancestor would list the same scripts twice under a longer path, while two
+ * links side by side pointing at one folder are two folders the user made, and
+ * both belong in the list.
+ */
+async function descend(
+	root: string,
+	relative: string,
+	depth: number,
+	rules: IgnoreRules,
+	out: ScriptInfo[],
+	ancestors: readonly string[],
+	target: { real: string } | { link: string }
+): Promise<void> {
+	if (rules.ignoresFolder(relative)) return;
+	if (depth + 1 > MAX_DEPTH) return;
+
+	let real: string;
+	if ("real" in target) {
+		real = target.real;
+	} else {
+		try {
+			real = await fs.realpath(target.link);
+		} catch {
+			return;
+		}
+	}
+	if (ancestors.includes(real)) return;
+
+	await walk(root, relative, depth + 1, rules, out, [...ancestors, real]);
+}
+
+async function record(
+	absolute: string,
+	relative: string,
+	stat: nodeFs.Stats,
+	out: ScriptInfo[]
+): Promise<void> {
+	let hasShebang = false;
+	try {
+		hasShebang = await startsWithShebang(absolute);
+	} catch {
+		return;
+	}
+	out.push({ fileName: relative, executable: (stat.mode & 0o111) !== 0, hasShebang });
+}
+
+/** Top-level scripts first, then each folder's scripts kept together. */
+function byFolderThenName(a: ScriptInfo, b: ScriptInfo): number {
+	const dirA = dirOf(a.fileName);
+	const dirB = dirOf(b.fileName);
+	if (dirA !== dirB) return dirA.localeCompare(dirB);
+	return baseOf(a.fileName).localeCompare(baseOf(b.fileName));
+}
+
+function dirOf(relativePath: string): string {
+	const slash = relativePath.lastIndexOf("/");
+	return slash === -1 ? "" : relativePath.slice(0, slash);
+}
+
+function baseOf(relativePath: string): string {
+	const slash = relativePath.lastIndexOf("/");
+	return slash === -1 ? relativePath : relativePath.slice(slash + 1);
+}
+
+function isNotFound(error: unknown): boolean {
+	return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
+
+function readFailure(relativeDir: string, error: unknown): string {
+	const reason = error instanceof Error ? error.message : String(error);
+	if (relativeDir === "") return reason;
+	return `${relativeDir}: ${reason}. Add it to the ignored folders setting to skip it.`;
 }
 
 async function startsWithShebang(fullPath: string): Promise<boolean> {
@@ -81,26 +237,55 @@ export async function makeExecutable(paths: CronPaths, fileName: string): Promis
 export type StopWatching = () => void;
 
 /**
- * Watches the cron folder for scripts appearing and disappearing.
+ * Whether a watch event is worth a rescan.
+ *
+ * The runner writes a log and a status file on every run, so without this the
+ * folder would rescan itself every time a job fired. Ignored paths are
+ * deliberately *not* filtered here: a rescan that finds nothing new is cheap,
+ * and a second copy of the ignore rules is a second place to get them wrong.
+ */
+function isWatchEvent(relative: string): boolean {
+	const segments = relative.split("/");
+	const name = segments[segments.length - 1];
+	if (segments[0] === LOGS_DIR_NAME || segments[0] === LOCKS_DIR_NAME) return false;
+	if (segments.length === 1 && name === RUNNER_FILE_NAME) return false;
+	if (segments.some((segment) => segment.startsWith("."))) return false;
+	// A folder dragged in whole can arrive as a single event naming the folder,
+	// with nothing said about the scripts inside it, so anything without an
+	// extension is treated as a possible folder and rescanned.
+	if (!name.includes(".")) return true;
+	return isScriptName(name);
+}
+
+/**
+ * Watches the cron folder, and everything under it, for scripts appearing and
+ * disappearing.
  *
  * `fs.watch` goes through FSEvents on macOS and can fail outright or go quiet
  * on network and synced volumes, so callers keep a polling backstop; this
- * returns a no-op stopper when the watch could not be established.
+ * returns a no-op stopper when the watch could not be established. Recursive
+ * watching is unavailable on older Linux builds, where the same backstop covers
+ * the subfolders a flat watch cannot see.
  */
 export function watchCronFolder(paths: CronPaths, onChange: () => void, debounceMs = 300): StopWatching {
 	let timer: ReturnType<typeof setTimeout> | null = null;
-	let watcher: nodeFs.FSWatcher;
 
+	const handle = (_event: string, fileName: string | Buffer | null) => {
+		// A stray event with no filename should still trigger a rescan.
+		if (fileName !== null && !isWatchEvent(String(fileName).split(path.sep).join("/"))) return;
+		if (timer !== null) clearTimeout(timer);
+		timer = setTimeout(onChange, debounceMs);
+	};
+
+	let watcher: nodeFs.FSWatcher;
 	try {
-		watcher = nodeFs.watch(paths.folder, { persistent: false }, (_event, fileName) => {
-			// Log and status writes land in a subdirectory, but a stray event
-			// with no filename should still trigger a rescan.
-			if (fileName !== null && !isCandidate(String(fileName))) return;
-			if (timer !== null) clearTimeout(timer);
-			timer = setTimeout(onChange, debounceMs);
-		});
+		watcher = nodeFs.watch(paths.folder, { persistent: false, recursive: true }, handle);
 	} catch {
-		return () => undefined;
+		try {
+			watcher = nodeFs.watch(paths.folder, { persistent: false }, handle);
+		} catch {
+			return () => undefined;
+		}
 	}
 
 	watcher.on("error", () => watcher.close());

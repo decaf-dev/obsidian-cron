@@ -1,5 +1,6 @@
 import { validateCronExpression } from "./cron-expression";
 import { UnquotableValueError, shellSingleQuote } from "./shell-quote";
+import { isSafeScriptPath } from "./settings";
 import type { CronJob } from "./settings";
 import type { ScriptInfo } from "./script-scanner";
 
@@ -69,8 +70,34 @@ export function getEnvironmentDiagnostics(status: EnvironmentStatus): Diagnostic
  * Problems with one job. An error here means the job cannot be scheduled;
  * a warning is worth showing but does not block.
  */
-export function getJobDiagnostics(job: CronJob, script: ScriptInfo | undefined): Diagnostic[] {
+export function getJobDiagnostics(
+	job: CronJob,
+	script: ScriptInfo | undefined,
+	ignored = false
+): Diagnostic[] {
 	const diagnostics: Diagnostic[] = [];
+
+	// Ahead of everything else: a job pointing outside the cron folder is never
+	// something the scan produced, so no other diagnostic about it is meaningful.
+	if (!isSafeScriptPath(job.fileName)) {
+		diagnostics.push({
+			level: "error",
+			message: "This job's script path is not inside the cron folder.",
+			detail: `${job.fileName} was not found by a scan, so it was written into data.json by hand or by whatever syncs your vault. Remove the job.`,
+		});
+		return diagnostics;
+	}
+
+	// Checked before the missing case: an ignored script is still on disk, and
+	// telling the user to put it back would send them looking for nothing.
+	if (ignored) {
+		diagnostics.push({
+			level: "error",
+			message: "This script is excluded by your ignore settings.",
+			detail: "Take it out of the ignored folders or ignored files to schedule it again.",
+		});
+		return diagnostics;
+	}
 
 	if (job.missing || script === undefined) {
 		diagnostics.push({
@@ -124,7 +151,7 @@ export function getJobDiagnostics(job: CronJob, script: ScriptInfo | undefined):
  * `enabled` is the user's intent; this is the derived answer that accounts for
  * a missing script, a bad schedule or a file that cannot be executed.
  */
-export function isSchedulable(job: CronJob, script: ScriptInfo | undefined): boolean {
+export function isSchedulable(job: CronJob, script: ScriptInfo | undefined, ignored = false): boolean {
 	if (!job.enabled) return false;
-	return !getJobDiagnostics(job, script).some((d) => d.level === "error");
+	return !getJobDiagnostics(job, script, ignored).some((d) => d.level === "error");
 }

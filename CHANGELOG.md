@@ -9,6 +9,7 @@ Entries are grouped by date rather than by version.
 
 ### Added
 
+-   A drag handle on each job in the settings list. Drag a job to reorder it, or focus its handle and use the arrow keys. The order is kept in `data.json` and restored when Obsidian reopens, and a newly discovered script is added at the end so an arrangement already made does not shift. The managed crontab block is written in the same order, and the `Run script: <name>` commands are re-registered in it, though the command palette applies its own ranking on top
 -   Cron job management. Shell scripts in `<vault>/.obsidian/cron`, and in any folder inside it up to eight levels deep, are discovered automatically and listed in the plugin settings, where each one gets a name, a cron schedule, and an enable toggle. Enabled jobs are written to the system crontab on macOS and Linux
 -   A nested script is named after the folders it sits in, so `backup/nightly-sync.sh` becomes `Backup / Nightly sync` and two scripts with the same filename are still told apart in the command palette
 -   **Ignored folders** and **Ignored files** settings, comma-separated. An entry without a slash matches by name at any depth, so `lib` covers `lib/` and `backup/lib/`; an entry with a slash has to match the whole path, so `archive/2024` leaves `archive/2025` alone. Matching ignores case

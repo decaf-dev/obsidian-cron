@@ -73,12 +73,7 @@
 	}
 </script>
 
-<div
-	bind:this={card}
-	class="cron-job"
-	class:cron-job-inactive={!view.scheduled}
-	class:cron-job-dragging={dragging}
->
+<div bind:this={card} class="cron-job" class:cron-job-dragging={dragging}>
 	<button
 		type="button"
 		class="cron-grip"
@@ -214,6 +209,7 @@
 	.cron-job {
 		border: 1px solid var(--background-modifier-border);
 		border-radius: var(--radius-m);
+		background: var(--background-primary-alt);
 		padding: 16px;
 		display: grid;
 		grid-template-columns: auto minmax(0, 1fr);
@@ -225,10 +221,6 @@
 		flex-direction: column;
 		gap: 10px;
 		min-width: 0;
-	}
-
-	.cron-job-inactive {
-		background: var(--background-primary-alt);
 	}
 
 	/* The card being dragged is dimmed rather than hidden: taking it out of

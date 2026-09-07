@@ -190,18 +190,6 @@ export class CronSettingTab extends PluginSettingTab {
 				heading: "Maintenance",
 				items: [
 					{
-						name: "Remove all managed jobs now",
-						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
-						render: (setting: Setting) => {
-							setting.addButton((button) =>
-								button
-									.setButtonText("Remove all")
-									.setDestructive()
-									.onClick(() => void service.removeAllManagedJobs())
-							);
-						},
-					},
-					{
 						name: "Open cron folder",
 						desc: service.getPaths()?.folder ?? "Unavailable for this vault.",
 						render: (setting: Setting) => {
@@ -213,6 +201,18 @@ export class CronSettingTab extends PluginSettingTab {
 										const paths = service.getPaths();
 										if (paths !== null) window.open(fileUrl(paths.folder));
 									})
+							);
+						},
+					},
+					{
+						name: "Remove all managed jobs",
+						desc: "Turns every job off and clears this plugin's block from your crontab. Your own cron jobs are left untouched.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Remove all")
+									.setDestructive()
+									.onClick(() => void service.removeAllManagedJobs())
 							);
 						},
 					},

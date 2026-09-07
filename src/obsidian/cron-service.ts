@@ -161,6 +161,23 @@ export class CronService {
 		for (const listener of this.listeners) listener();
 	}
 
+	/**
+	 * Writes settings to disk, reporting a failure instead of rejecting.
+	 *
+	 * Every caller has already changed the in-memory state and goes on to
+	 * notify the UI, which has to happen whether or not the write lands: a
+	 * rejection here used to escape into a discarded promise, leaving the
+	 * settings pane showing a job the service had already dropped, and saying
+	 * nothing about why.
+	 */
+	private async persistSettings(): Promise<void> {
+		try {
+			await this.plugin.saveSettings();
+		} catch (error) {
+			new Notice(`Could not save the job list: ${message(error)}`);
+		}
+	}
+
 	getPaths(): CronPaths | null {
 		return this.paths;
 	}
@@ -252,7 +269,7 @@ export class CronService {
 
 		if (result.changed) {
 			this.plugin.settings.jobs = result.jobs;
-			await this.plugin.saveSettings();
+			await this.persistSettings();
 		}
 
 		// This path is otherwise silent, because the watch and the poll both
@@ -335,7 +352,7 @@ export class CronService {
 		const previous = jobs[index];
 		const job = { ...previous, ...patch };
 		jobs[index] = job;
-		await this.plugin.saveSettings();
+		await this.persistSettings();
 		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
@@ -355,7 +372,7 @@ export class CronService {
 	 */
 	async removeJob(id: string): Promise<void> {
 		this.plugin.settings.jobs = this.plugin.settings.jobs.filter((job) => job.id !== id);
-		await this.plugin.saveSettings();
+		await this.persistSettings();
 		this.syncCommands();
 		this.notify();
 		this.requestCrontabSync();
@@ -376,7 +393,7 @@ export class CronService {
 
 	async updateSettings(patch: Partial<CronSettings>): Promise<void> {
 		Object.assign(this.plugin.settings, patch);
-		await this.plugin.saveSettings();
+		await this.persistSettings();
 
 		if ("loginShellOverride" in patch) {
 			this.loginShell = detectLoginShell(this.plugin.settings.loginShellOverride);
@@ -588,7 +605,7 @@ export class CronService {
 		const jobs = this.plugin.settings.jobs;
 		if (jobs.some((job) => job.enabled)) {
 			this.plugin.settings.jobs = jobs.map((job) => ({ ...job, enabled: false }));
-			await this.plugin.saveSettings();
+			await this.persistSettings();
 		}
 
 		await this.enqueueCrontabWork(async () => {

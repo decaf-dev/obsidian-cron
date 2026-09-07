@@ -146,16 +146,28 @@
 			</div>
 
 			<div class="cron-job-controls">
+				<!-- Obsidian's own toggle, hand-rolled rather than mounted through
+				     ToggleComponent: the classes are all its stylesheet needs, and
+				     a real checkbox keeps the keyboard and label behaviour the API
+				     would otherwise have to re-implement. The label has to wrap the
+				     switch, because the input inside it is transparent and covers
+				     only the left edge. -->
 				<label class="cron-toggle" title={toggleTitle}>
-					<input
-						type="checkbox"
-						checked={job.enabled}
-						disabled={toggleDisabled}
-						onchange={(e) =>
-							void service.updateJob(job.id, {
-								enabled: (e.currentTarget as HTMLInputElement).checked,
-							})}
-					/>
+					<span
+						class="checkbox-container"
+						class:is-enabled={job.enabled}
+						class:is-disabled={toggleDisabled}
+					>
+						<input
+							type="checkbox"
+							checked={job.enabled}
+							disabled={toggleDisabled}
+							onchange={(e) =>
+								void service.updateJob(job.id, {
+									enabled: (e.currentTarget as HTMLInputElement).checked,
+								})}
+						/>
+					</span>
 					<span>Enabled</span>
 				</label>
 
@@ -336,6 +348,13 @@
 		gap: 6px;
 		font-size: var(--font-ui-small);
 		white-space: nowrap;
+	}
+
+	/* Focus lands on the transparent checkbox, so the ring it would draw is
+	   invisible. Obsidian puts the same outline on the switch itself, which is
+	   the part that can actually be seen. */
+	.cron-toggle .checkbox-container:has(input:focus-visible) {
+		outline: var(--toggle-s-border-width) solid var(--background-modifier-border-focus);
 	}
 
 	.cron-remove {

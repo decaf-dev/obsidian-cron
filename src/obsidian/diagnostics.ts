@@ -6,7 +6,7 @@ import type { ScriptInfo } from "./script-scanner";
 
 export type DiagnosticLevel = "error" | "warning";
 
-/** A fix the settings UI can offer as a button. */
+/** A fix the settings UI offers, gathered into one banner above the job list. */
 export type DiagnosticFix = "make-executable";
 
 export interface Diagnostic {

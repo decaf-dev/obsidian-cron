@@ -2,6 +2,7 @@
 	import { flip } from "svelte/animate";
 	import type { CronService } from "../obsidian/cron-service";
 	import DiagnosticsPanel from "./DiagnosticsPanel.svelte";
+	import ExecutableBanner from "./ExecutableBanner.svelte";
 	import JobRow from "./JobRow.svelte";
 	import type { JobStore } from "./store.svelte";
 
@@ -51,6 +52,7 @@
 
 <div class="cron-job-list">
 	<DiagnosticsPanel diagnostics={store.diagnostics} />
+	<ExecutableBanner {service} views={store.views} />
 
 	{#if store.views.length === 0}
 		<div class="cron-empty">

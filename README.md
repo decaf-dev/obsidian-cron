@@ -88,7 +88,7 @@ To remove the block yourself at any time, use **Remove all managed jobs now** in
 
 ### Writing a script
 
-Scripts need the executable bit set. If one is missing it, the settings tab says so and offers a **Make executable** button.
+Scripts need the executable bit set. If any are missing it, a banner at the top of the settings tab names them and offers **Grant all**, which sets the bit on every one of them at once. **Dismiss** hides the banner until you reopen the settings tab, or until the set of scripts missing the bit changes.
 
 ```bash
 #!/bin/sh

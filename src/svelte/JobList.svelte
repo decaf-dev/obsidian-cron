@@ -111,17 +111,19 @@
 	/* The job cards are outlined panels in their own right, so stacking them
 	   inside the settings group's panel reads as a box inside a box. The group
 	   is given a class of its own in the settings tab purely so its panel and
-	   the row padding can be taken back off here, leaving the cards sitting on
-	   the pane. */
+	   the padding can be taken back off here, leaving the cards sitting on the
+	   pane and starting at the same edge as every other section. */
 	:global(.cron-scripts-group .setting-items),
 	:global(.setting-items.cron-scripts-group) {
 		background-color: transparent;
 		border: none;
 		border-radius: 0;
+		padding: 0;
 	}
 
-	/* The row inside the panel carries the panel's own padding, which would
-	   otherwise inset the cards from the sections below them. */
+	/* The row inside the panel carries padding of its own on top of the
+	   panel's, which would otherwise inset the cards from the sections below
+	   them. */
 	:global(.cron-scripts-group .setting-item) {
 		padding: 0;
 		background-color: transparent;

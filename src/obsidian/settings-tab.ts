@@ -95,6 +95,10 @@ export class CronSettingTab extends PluginSettingTab {
 			{
 				type: "group",
 				heading: "Scripts",
+				// The cards carry their own borders, so the group's panel is
+				// stripped back to nothing in JobList's stylesheet. The class is
+				// the only handle it has on this group.
+				cls: "cron-scripts-group",
 				items: [
 					{
 						name: "Scripts",

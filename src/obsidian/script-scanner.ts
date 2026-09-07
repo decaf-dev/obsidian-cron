@@ -12,6 +12,12 @@ export interface ScriptInfo {
 	executable: boolean;
 	/** The file starts with `#!`. */
 	hasShebang: boolean;
+	/**
+	 * Why the file could not be read, when the scan found it on disk but could
+	 * not look inside it. `executable` and `hasShebang` are then unknown rather
+	 * than false, so nothing should be concluded from them.
+	 */
+	readError: string | null;
 }
 
 /**
@@ -42,7 +48,7 @@ function isReserved(name: string): boolean {
  * Lists the user's scripts, including the ones in subfolders.
  *
  * Node `fs` rather than the vault adapter, because the adapter's `stat` has no
- * mode bits and it cannot chmod — both of which this plugin needs. And a
+ * mode bits and it cannot chmod â both of which this plugin needs. And a
  * hand-written walk rather than a recursive `readdir`, because an ignored
  * folder has to prune the subtree rather than be filtered out afterwards.
  *
@@ -107,8 +113,15 @@ async function walk(
 			let target: nodeFs.Stats;
 			try {
 				target = await fs.stat(absolute);
-			} catch {
-				// A broken symlink: skip it.
+			} catch (error) {
+				// A broken symlink points at nothing, so there is no script
+				// here. Any other failure leaves a link that probably still
+				// resolves to one, and dropping it would report the job as
+				// missing; see `record`.
+				if (isNotFound(error)) continue;
+				if (!isScriptName(entry.name)) continue;
+				if (rules.ignoresFile(relative)) continue;
+				out.push(unreadable(relative, error, false));
 				continue;
 			}
 			if (target.isDirectory()) {
@@ -126,15 +139,20 @@ async function walk(
 		if (!isScriptName(entry.name)) continue;
 		if (rules.ignoresFile(relative)) continue;
 
+		let stat: nodeFs.Stats;
 		try {
-			const stat = await fs.stat(absolute);
-			if (!stat.isFile()) continue;
-			await record(absolute, relative, stat, out);
-		} catch {
+			stat = await fs.stat(absolute);
+		} catch (error) {
 			// Removed mid-scan: skip it and let the next scan pick up whatever
 			// is actually there.
+			if (isNotFound(error)) continue;
+			// Anything else means readdir listed a file that is still on disk
+			// and cannot be inspected; see `record`.
+			out.push(unreadable(relative, error, false));
 			continue;
 		}
+		if (!stat.isFile()) continue;
+		await record(absolute, relative, stat, out);
 	}
 }
 
@@ -182,13 +200,35 @@ async function record(
 	stat: nodeFs.Stats,
 	out: ScriptInfo[]
 ): Promise<void> {
-	let hasShebang = false;
+	const executable = (stat.mode & 0o111) !== 0;
+
+	let hasShebang: boolean;
 	try {
 		hasShebang = await startsWithShebang(absolute);
-	} catch {
+	} catch (error) {
+		// Deleted between the stat and the open: there is nothing to record.
+		if (isNotFound(error)) return;
+		// Otherwise the file is on disk and merely unreadable for the moment,
+		// which a permission bit, a sync client holding it open, or a file kept
+		// in the cloud all produce. Leaving it out would tell reconciliation the
+		// script was deleted, which marks the job missing, takes it out of the
+		// crontab and offers to remove it — and the next scan that manages to
+		// read the file would add it back as a new job, its name and schedule
+		// lost.
+		out.push(unreadable(relative, error, executable));
 		return;
 	}
-	out.push({ fileName: relative, executable: (stat.mode & 0o111) !== 0, hasShebang });
+	out.push({ fileName: relative, executable, hasShebang, readError: null });
+}
+
+/** A script the scan found on disk but could not inspect. */
+function unreadable(relative: string, error: unknown, executable: boolean): ScriptInfo {
+	return {
+		fileName: relative,
+		executable,
+		hasShebang: false,
+		readError: error instanceof Error ? error.message : String(error),
+	};
 }
 
 /** Top-level scripts first, then each folder's scripts kept together. */

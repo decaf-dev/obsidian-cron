@@ -16,7 +16,13 @@ function job(overrides: Partial<CronJob> = {}): CronJob {
 }
 
 function script(overrides: Partial<ScriptInfo> = {}): ScriptInfo {
-	return { fileName: "backup/nightly.sh", executable: true, hasShebang: true, ...overrides };
+	return {
+		fileName: "backup/nightly.sh",
+		executable: true,
+		hasShebang: true,
+		readError: null,
+		...overrides,
+	};
 }
 
 describe("getJobDiagnostics", () => {
@@ -59,5 +65,17 @@ describe("getJobDiagnostics", () => {
 		expect(getJobDiagnostics(job(), script({ hasShebang: false }))[0]).toMatchObject({
 			level: "warning",
 		});
+	});
+
+	it("warns about a script it could not read, and keeps it schedulable", () => {
+		const unreadable = script({ readError: "EACCES: permission denied" });
+		const diagnostics = getJobDiagnostics(job(), unreadable);
+
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0]).toMatchObject({
+			level: "warning",
+			message: "This script could not be read, so it was not checked.",
+		});
+		expect(isSchedulable(job(), unreadable)).toBe(true);
 	});
 });

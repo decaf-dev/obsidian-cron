@@ -105,10 +105,29 @@ describe("scanScripts", () => {
 
 		const scripts = await scanScripts(paths, NO_RULES);
 		expect(scripts).toEqual([
-			{ fileName: "backup/plain.sh", executable: false, hasShebang: false },
-			{ fileName: "backup/ready.sh", executable: true, hasShebang: true },
+			{ fileName: "backup/plain.sh", executable: false, hasShebang: false, readError: null },
+			{ fileName: "backup/ready.sh", executable: true, hasShebang: true, readError: null },
 		]);
 	});
+
+	// Reporting an unreadable script as gone is what marks its job missing,
+	// takes it out of the crontab and offers to remove it, only for the next
+	// scan to add it back as a new job.
+	it.skipIf(process.getuid?.() === 0)(
+		"keeps a script it cannot read instead of dropping it from the scan",
+		async () => {
+			await write("backup/locked.sh", "#!/bin/sh\n", 0o311);
+
+			const scripts = await scanScripts(paths, NO_RULES);
+			expect(scripts).toHaveLength(1);
+			expect(scripts[0]).toMatchObject({
+				fileName: "backup/locked.sh",
+				executable: true,
+				hasShebang: false,
+			});
+			expect(scripts[0].readError).toBeTruthy();
+		}
+	);
 
 	it("prunes an ignored folder by name at any depth", async () => {
 		await write("lib/helper.sh");

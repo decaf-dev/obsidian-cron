@@ -108,20 +108,33 @@ export function getJobDiagnostics(
 		return diagnostics;
 	}
 
-	if (!script.executable) {
-		diagnostics.push({
-			level: "error",
-			message: "Script is not executable.",
-			fix: "make-executable",
-		});
-	}
-
-	if (!script.hasShebang) {
+	// The scan found the file but could not look inside it, so the two checks
+	// below have nothing to go on. A warning rather than an error: the script is
+	// on disk, cron can still run it, and unscheduling a working job over a
+	// permission bit or a sync client holding the file would be worse than
+	// saying so and carrying on.
+	if (script.readError !== null) {
 		diagnostics.push({
 			level: "warning",
-			message: "Script has no #! line.",
-			detail: "It will still run under your login shell, but adding #!/bin/sh makes that explicit.",
+			message: "This script could not be read, so it was not checked.",
+			detail: `${script.readError}. The job keeps its schedule, and the next scan tries again.`,
 		});
+	} else {
+		if (!script.executable) {
+			diagnostics.push({
+				level: "error",
+				message: "Script is not executable.",
+				fix: "make-executable",
+			});
+		}
+
+		if (!script.hasShebang) {
+			diagnostics.push({
+				level: "warning",
+				message: "Script has no #! line.",
+				detail: "It will still run under your login shell, but adding #!/bin/sh makes that explicit.",
+			});
+		}
 	}
 
 	const validation = validateCronExpression(job.schedule);

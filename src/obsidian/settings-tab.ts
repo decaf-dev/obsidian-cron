@@ -4,6 +4,7 @@ import { mount, unmount } from "svelte";
 import JobList from "../svelte/JobList.svelte";
 import PathList from "../svelte/PathList.svelte";
 import type CronPlugin from "../main";
+import { hasParentSegment, parseIgnoreList } from "./ignore-rules";
 import { createJobStore } from "../svelte/store.svelte";
 import { fileUrl } from "./vault-paths";
 
@@ -11,7 +12,9 @@ import { fileUrl } from "./vault-paths";
 type ControlKey =
 	| "loginShellOverride"
 	| "extraPath"
-	| "logMaxBytes";
+	| "logMaxBytes"
+	| "ignoredFolders"
+	| "ignoredFiles";
 
 export class CronSettingTab extends PluginSettingTab {
 	/** One subscription shared by every component this tab mounts. */
@@ -48,6 +51,10 @@ export class CronSettingTab extends PluginSettingTab {
 				return settings.extraPath.join(":");
 			case "logMaxBytes":
 				return Math.round(settings.logMaxBytes / 1024);
+			case "ignoredFolders":
+				return settings.ignoredFolders.join(", ");
+			case "ignoredFiles":
+				return settings.ignoredFiles.join(", ");
 			default:
 				return undefined;
 		}
@@ -72,6 +79,12 @@ export class CronSettingTab extends PluginSettingTab {
 			case "logMaxBytes":
 				await service.updateSettings({ logMaxBytes: Math.max(1, Number(value)) * 1024 });
 				return;
+			case "ignoredFolders":
+				await service.updateSettings({ ignoredFolders: parseIgnoreList(String(value)) });
+				return;
+			case "ignoredFiles":
+				await service.updateSettings({ ignoredFiles: parseIgnoreList(String(value)) });
+				return;
 		}
 	}
 
@@ -88,6 +101,26 @@ export class CronSettingTab extends PluginSettingTab {
 						desc: "Every shell script in the cron folder, with the schedule it runs on.",
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
+					},
+					{
+						name: "Ignored folders",
+						desc: "Comma-separated folders inside the cron folder that are not scanned. A name on its own, like lib, skips every folder called that at any depth. A path, like archive/2024, skips only that one.",
+						control: {
+							type: "text",
+							key: "ignoredFolders" satisfies ControlKey,
+							defaultValue: "",
+							validate: rejectParentSegments,
+						},
+					},
+					{
+						name: "Ignored files",
+						desc: "Comma-separated scripts that are not turned into jobs. A name on its own, like _shared.sh, skips it wherever it appears. A path, like tools/wip.sh, skips only that one.",
+						control: {
+							type: "text",
+							key: "ignoredFiles" satisfies ControlKey,
+							defaultValue: "",
+							validate: rejectParentSegments,
+						},
 					},
 					{
 						name: "Rescan cron folder",
@@ -177,6 +210,16 @@ export class CronSettingTab extends PluginSettingTab {
 			},
 		];
 	}
+}
+
+/**
+ * The scan only ever compares these entries against paths it already found, so
+ * a `..` cannot reach outside the cron folder. It is still refused rather than
+ * quietly dropped, because an entry written that way means something the
+ * setting cannot do.
+ */
+function rejectParentSegments(value: string): string | void {
+	if (hasParentSegment(value)) return "An entry cannot contain \"..\".";
 }
 
 /**

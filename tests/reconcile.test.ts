@@ -83,11 +83,122 @@ describe("reconcileJobs", () => {
 	});
 });
 
+describe("reconcileJobs following a moved script", () => {
+	it("re-links a job whose script moved to another folder", () => {
+		const existing = [job({ fileName: "backup.sh", name: "Nightly", schedule: "*/5 * * * *" })];
+		const result = reconcileJobs(existing, ["archive/backup.sh"], ids);
+
+		expect(result.jobs).toHaveLength(1);
+		expect(result.moved).toHaveLength(1);
+		expect(result.added).toHaveLength(0);
+		expect(result.nowMissing).toHaveLength(0);
+		expect(result.jobs[0]).toMatchObject({
+			id: existing[0].id,
+			fileName: "archive/backup.sh",
+			name: "Nightly",
+			schedule: "*/5 * * * *",
+			enabled: true,
+			missing: false,
+		});
+		expect(result.changed).toBe(true);
+	});
+
+	it("re-links a job that was already missing", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "backup.sh", missing: true, enabled: true })],
+			["archive/backup.sh"],
+			ids
+		);
+		expect(result.moved).toHaveLength(1);
+		expect(result.jobs[0]).toMatchObject({ fileName: "archive/backup.sh", missing: false });
+	});
+
+	it("follows a move between two subfolders", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "old/backup.sh" })],
+			["new/nested/backup.sh"],
+			ids
+		);
+		expect(result.jobs[0].fileName).toBe("new/nested/backup.sh");
+	});
+
+	it("refuses when two jobs lost the same filename", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "a/backup.sh" }), job({ fileName: "b/backup.sh" })],
+			["c/backup.sh"],
+			ids
+		);
+		expect(result.moved).toHaveLength(0);
+		expect(result.nowMissing).toHaveLength(2);
+		expect(result.added).toHaveLength(1);
+	});
+
+	it("refuses when two new scripts carry the same filename", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "backup.sh" })],
+			["a/backup.sh", "b/backup.sh"],
+			ids
+		);
+		expect(result.moved).toHaveLength(0);
+		expect(result.nowMissing).toHaveLength(1);
+		expect(result.added).toHaveLength(2);
+	});
+
+	it("does not follow a rename within the same folder", () => {
+		const result = reconcileJobs([job({ fileName: "backup.sh" })], ["archive.sh"], ids);
+		expect(result.moved).toHaveLength(0);
+		expect(result.nowMissing).toHaveLength(1);
+		expect(result.added).toHaveLength(1);
+	});
+
+	it("does not claim a script another job already owns", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "backup.sh" }), job({ fileName: "archive/backup.sh" })],
+			["archive/backup.sh"],
+			ids
+		);
+		expect(result.moved).toHaveLength(0);
+		expect(result.nowMissing).toHaveLength(1);
+	});
+
+	it("still marks a deleted script missing", () => {
+		const result = reconcileJobs([job({ fileName: "backup.sh" })], ["unrelated.sh"], ids);
+		expect(result.moved).toHaveLength(0);
+		expect(result.jobs[0].missing).toBe(true);
+	});
+
+	it("re-links after duplicate entries are dropped, not before", () => {
+		const result = reconcileJobs(
+			[job({ fileName: "backup.sh", id: "a" }), job({ fileName: "backup.sh", id: "b" })],
+			["archive/backup.sh"],
+			ids
+		);
+		expect(result.jobs).toHaveLength(1);
+		expect(result.jobs[0]).toMatchObject({ id: "a", fileName: "archive/backup.sh" });
+		expect(result.moved).toHaveLength(1);
+	});
+});
+
 describe("defaultNameFor", () => {
 	it("humanizes the filename", () => {
 		expect(defaultNameFor("nightly-backup.sh")).toBe("Nightly backup");
 		expect(defaultNameFor("sync_notes.sh")).toBe("Sync notes");
 		expect(defaultNameFor("backup.sh")).toBe("Backup");
+	});
+
+	it("names the folders a nested script sits in", () => {
+		expect(defaultNameFor("backup/nightly-sync.sh")).toBe("Backup / Nightly sync");
+		expect(defaultNameFor("archive/2024/purge_old_logs.sh")).toBe(
+			"Archive / 2024 / Purge old logs"
+		);
+	});
+
+	it("only strips .sh from the script itself", () => {
+		expect(defaultNameFor("tools.sh/run.sh")).toBe("Tools.sh / Run");
+	});
+
+	it("skips a segment nothing survives", () => {
+		expect(defaultNameFor("_/backup.sh")).toBe("Backup");
 	});
 });
 
@@ -96,5 +207,10 @@ describe("makeJobId", () => {
 		expect(makeJobId("Nightly Backup!.sh", () => "k3f9d2")).toBe("nightly-backup-sh-k3f9d2");
 		expect(makeJobId("...", () => "k3f9d2")).toBe("job-k3f9d2");
 		expect(makeJobId("a".repeat(80) + ".sh", () => "k3f9d2")).toMatch(/^[a-z0-9-]{1,64}$/);
+		expect(makeJobId("backup/nightly.sh", () => "k3f9d2")).toBe("backup-nightly-sh-k3f9d2");
+		// The 48-character slice must not leave the slug ending on a separator.
+		expect(makeJobId("a".repeat(47) + "/b.sh", () => "k3f9d2")).toBe(
+			"a".repeat(47) + "-k3f9d2"
+		);
 	});
 });

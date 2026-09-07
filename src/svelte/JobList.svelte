@@ -20,8 +20,8 @@
 		<div class="cron-empty">
 			<p>No scripts yet.</p>
 			<p class="cron-empty-hint">
-				Put a shell script in the cron folder and it will show up here, disabled until you
-				give it a schedule and turn it on.
+				Put a shell script in the cron folder, or any folder inside it, and it will show
+				up here, disabled until you give it a schedule and turn it on.
 			</p>
 			{#if folder}
 				<code>{folder}</code>

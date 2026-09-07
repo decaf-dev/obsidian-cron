@@ -94,13 +94,30 @@ export class CronSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: "group",
-				heading: "Jobs",
+				heading: "Scripts",
 				items: [
 					{
-						name: "Scheduled scripts",
+						name: "Scripts",
 						desc: "Every shell script in the cron folder, with the schedule it runs on.",
 						searchable: false,
 						render: (setting: Setting) => mountInto(setting, JobList, { service, store: this.getStore() }),
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Scanning",
+				items: [
+					{
+						name: "Rescan cron folder",
+						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
+						render: (setting: Setting) => {
+							setting.addButton((button) =>
+								button
+									.setButtonText("Rescan")
+									.onClick(() => void service.rescan())
+							);
+						},
 					},
 					{
 						name: "Ignored folders",
@@ -120,17 +137,6 @@ export class CronSettingTab extends PluginSettingTab {
 							key: "ignoredFiles" satisfies ControlKey,
 							defaultValue: "",
 							validate: rejectParentSegments,
-						},
-					},
-					{
-						name: "Rescan cron folder",
-						desc: "Picks up scripts added, renamed or removed outside Obsidian.",
-						render: (setting: Setting) => {
-							setting.addButton((button) =>
-								button
-									.setButtonText("Rescan")
-									.onClick(() => void service.rescan())
-							);
 						},
 					},
 				],
@@ -177,7 +183,7 @@ export class CronSettingTab extends PluginSettingTab {
 			},
 			{
 				type: "group",
-				heading: "Crontab",
+				heading: "Maintenance",
 				items: [
 					{
 						name: "Remove all managed jobs now",

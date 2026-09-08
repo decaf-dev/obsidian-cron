@@ -1,6 +1,6 @@
 {
-	"id": "cron",
-	"name": "Cron",
+	"id": "cron-jobs",
+	"name": "Cron Jobs",
 	"version": "0.5.2",
 	"minAppVersion": "1.14.0",
 	"description": "Schedule cron jobs on your machine from inside Obsidian",

@@ -1,4 +1,4 @@
-# Cron
+# Cron Jobs
 
 Schedule cron jobs on your machine from inside [Obsidian](https://obsidian.md).
 
@@ -14,7 +14,7 @@ Put your shell scripts in the `cron` folder inside your vault's config folder:
 <your vault>/.obsidian/cron/
 ```
 
-The plugin picks up every `.sh` file it finds there, **including the ones in subfolders**, and lists them under **Settings > Cron**. A newly discovered script starts out **disabled**, so nothing runs until you give it a schedule and turn it on. Enabling a job writes it to your crontab; disabling it takes it back out.
+The plugin picks up every `.sh` file it finds there, **including the ones in subfolders**, and lists them under **Settings > Cron Jobs**. A newly discovered script starts out **disabled**, so nothing runs until you give it a schedule and turn it on. Enabling a job writes it to your crontab; disabling it takes it back out.
 
 ```
 <your vault>/.obsidian/cron/
@@ -77,9 +77,9 @@ Moving a script to another folder keeps its job — its name, its schedule, its 
 Everything this plugin writes lives inside a delimited block:
 
 ```
-# BEGIN obsidian-cron
+# BEGIN obsidian-cron-jobs
 ...
-# END obsidian-cron
+# END obsidian-cron-jobs
 ```
 
 Lines outside that block are never touched. If the block is ever damaged — say the `# END` line gets deleted — the plugin refuses to write anything at all and tells you, rather than guessing where the block ends.
@@ -199,10 +199,10 @@ node --version
 3. Link `dist/` into your vault so Obsidian can load the plugin. The folder name must match the `id` in `manifest.json`:
 
     ```bash
-    ln -s ~/Desktop/public-repos/obsidian-cron/dist ~/Desktop/obsidian-development/.obsidian/plugins/cron
+    ln -s ~/Desktop/public-repos/obsidian-cron-jobs/dist ~/Desktop/obsidian-development/.obsidian/plugins/cron-jobs
     ```
 
-4. Open Obsidian, go to **Community plugins**, and enable Cron
+4. Open Obsidian, go to **Community plugins**, and enable Cron Jobs
 
 ### Reloading after each build
 

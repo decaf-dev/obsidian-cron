@@ -86,7 +86,7 @@ describe("writeCrontab", () => {
 
 		const afterAdd = await readCrontab(bin);
 		expect(afterAdd.existed).toBe(true);
-		expect(afterAdd.text).toContain("# BEGIN obsidian-cron");
+		expect(afterAdd.text).toContain("# BEGIN obsidian-cron-jobs");
 
 		const removed = spliceManagedBlock(afterAdd.text, null);
 		await writeCrontab(bin, removed, afterAdd.existed);

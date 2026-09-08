@@ -30,7 +30,7 @@ async function job(name: string, body: string): Promise<string> {
 }
 
 beforeEach(async () => {
-	dir = await fs.mkdtemp(path.join(os.tmpdir(), "obsidian-cron-"));
+	dir = await fs.mkdtemp(path.join(os.tmpdir(), "obsidian-cron-jobs-"));
 	runner = path.join(dir, "_runner.sh");
 });
 

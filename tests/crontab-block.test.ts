@@ -26,8 +26,8 @@ const BLOCK = buildManagedBlock([
 
 describe("buildManagedBlock", () => {
 	it("emits sentinels, a notice, and a comment per job", () => {
-		expect(BLOCK.split("\n")[0]).toBe("# BEGIN obsidian-cron");
-		expect(BLOCK.split("\n").at(-1)).toBe("# END obsidian-cron");
+		expect(BLOCK.split("\n")[0]).toBe("# BEGIN obsidian-cron-jobs");
+		expect(BLOCK.split("\n").at(-1)).toBe("# END obsidian-cron-jobs");
 		expect(BLOCK).toContain("# job: Nightly backup (backup-sh-a1b2)");
 		expect(BLOCK).toContain("0 3 * * * '/vault/.obsidian/cron/_runner.sh'");
 	});
@@ -114,7 +114,7 @@ describe("spliceManagedBlock", () => {
 	});
 
 	it("refuses to guess when the end sentinel is missing", () => {
-		const broken = `${USER_CRONTAB}# BEGIN obsidian-cron\n0 3 * * * /x\n`;
+		const broken = `${USER_CRONTAB}# BEGIN obsidian-cron-jobs\n0 3 * * * /x\n`;
 		expect(() => spliceManagedBlock(broken, BLOCK)).toThrow(MalformedManagedBlockError);
 		expect(() => spliceManagedBlock(broken, null)).toThrow(MalformedManagedBlockError);
 	});

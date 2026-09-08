@@ -208,10 +208,15 @@ export interface SchedulePreset {
 
 /** The schedules offered in the settings dropdown, in the order shown. */
 export const SCHEDULE_PRESETS: readonly SchedulePreset[] = [
+	{ label: "Every 5 minutes", expression: "*/5 * * * *" },
 	{ label: "Every 10 minutes", expression: "*/10 * * * *" },
+	{ label: "Every 15 minutes", expression: "*/15 * * * *" },
 	{ label: "Every 30 minutes", expression: "*/30 * * * *" },
 	{ label: "Every hour", expression: "0 * * * *" },
+	{ label: "Every 6 hours", expression: "0 */6 * * *" },
+	{ label: "Every 12 hours", expression: "0 */12 * * *" },
 	{ label: "Every day at midnight", expression: "0 0 * * *" },
+	{ label: "Every Sunday at midnight", expression: "0 0 * * 0" },
 ];
 
 /**

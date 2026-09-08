@@ -6,7 +6,7 @@ import PathList from "../svelte/PathList.svelte";
 import type CronPlugin from "../main";
 import { hasParentSegment, parseIgnoreList } from "./ignore-rules";
 import { createJobStore } from "../svelte/store.svelte";
-import { fileUrl } from "./vault-paths";
+import { fileUrl, getCronPaths } from "./vault-paths";
 
 /** Keys handled by getControlValue / setControlValue below. */
 type ControlKey =
@@ -88,8 +88,30 @@ export class CronSettingTab extends PluginSettingTab {
 		}
 	}
 
+	/**
+	 * The cron folder, derived from the app rather than read off the service.
+	 *
+	 * The service only has paths once `initialize` has run, and that is deferred
+	 * to `onLayoutReady` — later than the settings tab is registered, and later
+	 * than these definitions can be asked for. Reading `service.getPaths()` here
+	 * therefore reported a working vault as unavailable, and the text never
+	 * corrected itself because nothing rebuilds the definitions afterwards.
+	 *
+	 * The path needs nothing but the app, so deriving it here is both accurate
+	 * and independent of start-up order. A throw still means what it always
+	 * meant: the vault is not on the local file system.
+	 */
+	private cronFolder(): string | null {
+		try {
+			return getCronPaths(this.app).folder;
+		} catch {
+			return null;
+		}
+	}
+
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		const service = this.plugin.service;
+		const cronFolder = this.cronFolder();
 
 		return [
 			{
@@ -191,15 +213,14 @@ export class CronSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: "Open cron folder",
-						desc: service.getPaths()?.folder ?? "Unavailable for this vault.",
+						desc: cronFolder ?? "Unavailable for this vault.",
 						render: (setting: Setting) => {
 							setting.addButton((button) =>
 								button
 									.setButtonText("Open folder")
-									.setDisabled(service.getPaths() === null)
+									.setDisabled(cronFolder === null)
 									.onClick(() => {
-										const paths = service.getPaths();
-										if (paths !== null) window.open(fileUrl(paths.folder));
+										if (cronFolder !== null) window.open(fileUrl(cronFolder));
 									})
 							);
 						},

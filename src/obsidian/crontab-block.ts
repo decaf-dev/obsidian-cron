@@ -1,5 +1,5 @@
-export const BLOCK_BEGIN = "# BEGIN obsidian-cron";
-export const BLOCK_END = "# END obsidian-cron";
+export const BLOCK_BEGIN = "# BEGIN obsidian-cron-jobs";
+export const BLOCK_END = "# END obsidian-cron-jobs";
 
 const BLOCK_NOTICE =
 	"# Managed by the Obsidian Cron plugin. Edits inside this block are overwritten.";
